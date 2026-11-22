@@ -1,0 +1,6 @@
+{
+  "name": "WeApp",
+  "description": "We Are All In One Place — Social feed, vertical videos, gaming arenas, real-time chat, marketplace, live rooms, and coins wallet.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
