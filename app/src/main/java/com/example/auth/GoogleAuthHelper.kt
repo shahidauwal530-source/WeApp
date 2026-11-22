@@ -62,7 +62,9 @@ object GoogleAuthHelper {
                 } else {
                     onUnauthenticated()
                 }
-            } catch (_: Exception) {
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
+            } catch (_: Throwable) {
                 onUnauthenticated()
             }
         }

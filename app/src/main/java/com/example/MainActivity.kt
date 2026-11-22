@@ -2,8 +2,10 @@ package com.example
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +25,7 @@ import com.example.data.PrivateUser
 import com.example.data.UserPreferencesDataStore
 import com.example.data.WeAppRepository
 import com.example.localization.stringsFor
+import com.example.permissions.WeAppPermissions
 import com.example.ui.MainViewModel
 import com.example.ui.UiState
 import com.example.ui.components.MainTab
@@ -31,6 +34,7 @@ import com.example.ui.screens.*
 import com.example.ui.theme.WeAppTheme
 import com.example.ui.theme.WePurple
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
@@ -56,6 +60,9 @@ private enum class SecondaryRoute {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (FirebaseApp.getApps(this).isEmpty()) {
+            runCatching { FirebaseApp.initializeApp(this) }
+        }
         enableEdgeToEdge()
         setContent {
             WeAppRoot()
@@ -68,74 +75,131 @@ fun WeAppRoot() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefsStore = remember(context) { UserPreferencesDataStore(context) }
-    val localPrefs by prefsStore.prefsFlow.collectAsStateWithLifecycle(initialValue = LocalAppPrefs())
+    val loadedPrefs by prefsStore.prefsFlow.collectAsStateWithLifecycle(initialValue = null)
+    val localPrefs = loadedPrefs ?: LocalAppPrefs()
     val strings = remember(localPrefs.language) { stringsFor(localPrefs.language) }
 
     var showSplash by remember { mutableStateOf(true) }
-    var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
+    var currentUser by remember { mutableStateOf(runCatching { Firebase.auth.currentUser }.getOrNull()) }
+    var permissionNotice by remember { mutableStateOf<String?>(null) }
+    val rootSnackbarHostState = remember { SnackbarHostState() }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        scope.launch {
+            prefsStore.setPermissionsPrompted(true)
+        }
+        if (results.values.any { granted -> !granted }) {
+            permissionNotice = "Some permissions were denied. You can continue using WeApp or enable them later in Settings."
+        }
+    }
+
+    LaunchedEffect(permissionNotice) {
+        val msg = permissionNotice
+        if (msg != null) {
+            rootSnackbarHostState.showSnackbar(msg)
+            permissionNotice = null
+        }
+    }
+
+    LaunchedEffect(showSplash, loadedPrefs) {
+        val prefs = loadedPrefs ?: return@LaunchedEffect
+        if (!showSplash && !prefs.permissionsPrompted) {
+            val missingPermissions = WeAppPermissions.missingRuntimePermissions(context)
+            if (missingPermissions.isEmpty()) {
+                prefsStore.setPermissionsPrompted(true)
+            } else {
+                runCatching {
+                    permissionLauncher.launch(missingPermissions.toTypedArray())
+                }.onFailure {
+                    prefsStore.setPermissionsPrompted(true)
+                }
+            }
+        }
+    }
 
     DisposableEffect(Unit) {
-        val listener = FirebaseAuth.AuthStateListener { auth ->
-            currentUser = auth.currentUser
+        val auth = runCatching { Firebase.auth }.getOrNull()
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            currentUser = firebaseAuth.currentUser
         }
-        Firebase.auth.addAuthStateListener(listener)
-        onDispose { Firebase.auth.removeAuthStateListener(listener) }
+        auth?.addAuthStateListener(listener)
+        onDispose { auth?.removeAuthStateListener(listener) }
     }
 
     LaunchedEffect(Unit) {
-        val credentialManager = CredentialManager.create(context)
-        GoogleAuthHelper.attemptAutoSignIn(
-            context = context,
-            credentialManager = credentialManager,
-            onAuthSuccess = { currentUser = Firebase.auth.currentUser },
-            onUnauthenticated = {},
-            scope = scope
-        )
+        runCatching {
+            val credentialManager = CredentialManager.create(context)
+            GoogleAuthHelper.attemptAutoSignIn(
+                context = context,
+                credentialManager = credentialManager,
+                onAuthSuccess = { currentUser = runCatching { Firebase.auth.currentUser }.getOrNull() },
+                onUnauthenticated = {},
+                scope = scope
+            )
+        }
     }
 
     WeAppTheme(
         themeMode = localPrefs.themeMode,
         fontSize = localPrefs.fontSize
     ) {
-        when {
-            showSplash -> {
-                SplashScreen(
-                    strings = strings,
-                    onSplashFinished = { showSplash = false }
-                )
-            }
-            !localPrefs.onboardingCompleted -> {
-                OnboardingScreen(
-                    strings = strings,
-                    currentLanguage = localPrefs.language,
-                    onToggleLanguage = { lang -> scope.launch { prefsStore.setLanguage(lang) } },
-                    onFinishOnboarding = { scope.launch { prefsStore.setOnboardingCompleted(true) } }
-                )
-            }
-            currentUser == null -> {
-                AuthScreen(
-                    strings = strings,
-                    currentLanguage = localPrefs.language,
-                    onToggleLanguage = { lang -> scope.launch { prefsStore.setLanguage(lang) } },
-                    onAuthSuccess = { currentUser = Firebase.auth.currentUser }
-                )
-            }
-            else -> {
-                val user = currentUser!!
-                key(user.uid) {
-                    AuthenticatedWeApp(
-                        firebaseUser = user,
-                        localPrefs = localPrefs,
-                        prefsStore = prefsStore,
-                        onSignOut = {
-                            val cm = CredentialManager.create(context)
-                            GoogleAuthHelper.signOut(cm, scope) {
-                                currentUser = null
-                            }
-                        }
+        Box(modifier = Modifier.fillMaxSize()) {
+            when {
+                showSplash || loadedPrefs == null -> {
+                    SplashScreen(
+                        strings = strings,
+                        onSplashFinished = { showSplash = false }
                     )
                 }
+                !localPrefs.onboardingCompleted -> {
+                    OnboardingScreen(
+                        strings = strings,
+                        currentLanguage = localPrefs.language,
+                        onToggleLanguage = { lang -> scope.launch { prefsStore.setLanguage(lang) } },
+                        onFinishOnboarding = { scope.launch { prefsStore.setOnboardingCompleted(true) } }
+                    )
+                }
+                currentUser == null -> {
+                    AuthScreen(
+                        strings = strings,
+                        currentLanguage = localPrefs.language,
+                        onToggleLanguage = { lang -> scope.launch { prefsStore.setLanguage(lang) } },
+                        onAuthSuccess = { currentUser = runCatching { Firebase.auth.currentUser }.getOrNull() }
+                    )
+                }
+                else -> {
+                    val user = currentUser
+                    if (user != null) {
+                        key(user.uid) {
+                        AuthenticatedWeApp(
+                            firebaseUser = user,
+                            localPrefs = localPrefs,
+                            prefsStore = prefsStore,
+                            onSignOut = {
+                                runCatching {
+                                    val cm = CredentialManager.create(context)
+                                    GoogleAuthHelper.signOut(cm, scope) {
+                                        currentUser = null
+                                    }
+                                }.onFailure {
+                                    runCatching { Firebase.auth.signOut() }
+                                    currentUser = null
+                                }
+                            }
+                        )
+                    }
+                    }
+                }
             }
+
+            SnackbarHost(
+                hostState = rootSnackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+            )
         }
     }
 }

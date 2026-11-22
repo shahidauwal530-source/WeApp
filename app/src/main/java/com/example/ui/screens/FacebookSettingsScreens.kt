@@ -2,6 +2,8 @@ package com.example.ui.screens
 
 import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.*
 import com.example.localization.AppStrings
+import com.example.permissions.WeAppPermissions
 import com.example.ui.UiState
 import com.example.ui.components.WeAppAvatar
 import com.example.ui.components.WeAppEmptyState
@@ -229,6 +232,46 @@ fun SettingsHubScreen(
                     if (currentUser.plan == "FREE") {
                         OutlinedButton(onClick = onOpenSubscription, modifier = Modifier.fillMaxWidth()) {
                             Text("Upgrade to PRO / VIP to Hide Ads Automatically")
+                        }
+                    }
+                }
+            }
+
+            // 8. APP PERMISSIONS
+            val permContext = LocalContext.current
+            var permTick by remember { mutableIntStateOf(0) }
+            val permStatus = remember(permTick) { WeAppPermissions.checkStatuses(permContext) }
+            val permLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestMultiplePermissions()
+            ) {
+                permTick++
+            }
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("8. App Permissions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    PermissionStatusRow("Camera (Video & Photo)", permStatus.cameraGranted)
+                    PermissionStatusRow("Microphone (Voice & Calls)", permStatus.micGranted)
+                    PermissionStatusRow("Contacts (Find Friends)", permStatus.contactsGranted)
+                    PermissionStatusRow("Notifications (Alerts)", permStatus.notificationsGranted)
+                    val missing = WeAppPermissions.missingRuntimePermissions(permContext)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        if (missing.isNotEmpty()) {
+                            OutlinedButton(
+                                onClick = { runCatching { permLauncher.launch(missing.toTypedArray()) } },
+                                modifier = Modifier.weight(1f).testTag("settings_request_permissions_btn")
+                            ) {
+                                Text("Grant Missing")
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = { WeAppPermissions.openAppSettings(permContext) },
+                            modifier = Modifier.weight(1f).testTag("settings_open_system_permissions_btn")
+                        ) {
+                            Text("System Settings")
                         }
                     }
                 }
@@ -816,6 +859,29 @@ private fun PrivacyChoiceCard(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PermissionStatusRow(label: String, granted: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Surface(
+            color = (if (granted) WeEmerald else WeGold).copy(alpha = 0.16f),
+            shape = RoundedCornerShape(999.dp)
+        ) {
+            Text(
+                text = if (granted) "Allowed" else "Not Granted",
+                color = if (granted) WeEmerald else WeGold,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+            )
         }
     }
 }

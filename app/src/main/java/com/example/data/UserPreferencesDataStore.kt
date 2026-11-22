@@ -14,6 +14,7 @@ private val Context.weAppDataStore: DataStore<Preferences> by preferencesDataSto
 
 data class LocalAppPrefs(
     val onboardingCompleted: Boolean = false,
+    val permissionsPrompted: Boolean = false,
     val themeMode: String = "dark",
     val fontSize: String = "medium",
     val language: String = GlobalLanguages.detectDeviceLanguage(),
@@ -29,6 +30,7 @@ class UserPreferencesDataStore(context: Context) {
 
     private object Keys {
         val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
+        val PERMISSIONS_PROMPTED = booleanPreferencesKey("permissions_prompted")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val FONT_SIZE = stringPreferencesKey("font_size")
         val LANGUAGE = stringPreferencesKey("language")
@@ -42,6 +44,7 @@ class UserPreferencesDataStore(context: Context) {
     val prefsFlow: Flow<LocalAppPrefs> = dataStore.data.map { prefs ->
         LocalAppPrefs(
             onboardingCompleted = prefs[Keys.ONBOARDING_COMPLETED] ?: false,
+            permissionsPrompted = prefs[Keys.PERMISSIONS_PROMPTED] ?: false,
             themeMode = prefs[Keys.THEME_MODE] ?: "dark",
             fontSize = prefs[Keys.FONT_SIZE] ?: "medium",
             language = prefs[Keys.LANGUAGE] ?: GlobalLanguages.detectDeviceLanguage(),
@@ -55,6 +58,10 @@ class UserPreferencesDataStore(context: Context) {
 
     suspend fun setOnboardingCompleted(completed: Boolean) {
         dataStore.edit { it[Keys.ONBOARDING_COMPLETED] = completed }
+    }
+
+    suspend fun setPermissionsPrompted(prompted: Boolean) {
+        dataStore.edit { it[Keys.PERMISSIONS_PROMPTED] = prompted }
     }
 
     suspend fun setThemeMode(mode: String) {
