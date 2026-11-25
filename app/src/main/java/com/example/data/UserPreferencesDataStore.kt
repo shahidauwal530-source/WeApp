@@ -2,15 +2,22 @@ package com.example.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import java.io.IOException
 
-private val Context.weAppDataStore: DataStore<Preferences> by preferencesDataStore(name = "weapp_prefs")
+private val Context.weAppDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "weapp_prefs",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }
+)
 
 data class LocalAppPrefs(
     val onboardingCompleted: Boolean = false,
@@ -41,20 +48,28 @@ class UserPreferencesDataStore(context: Context) {
         val CLOUDINARY_PRESET = stringPreferencesKey("cloudinary_preset")
     }
 
-    val prefsFlow: Flow<LocalAppPrefs> = dataStore.data.map { prefs ->
-        LocalAppPrefs(
-            onboardingCompleted = prefs[Keys.ONBOARDING_COMPLETED] ?: false,
-            permissionsPrompted = prefs[Keys.PERMISSIONS_PROMPTED] ?: false,
-            themeMode = prefs[Keys.THEME_MODE] ?: "dark",
-            fontSize = prefs[Keys.FONT_SIZE] ?: "medium",
-            language = prefs[Keys.LANGUAGE] ?: GlobalLanguages.detectDeviceLanguage(),
-            dataSaver = prefs[Keys.DATA_SAVER] ?: false,
-            autoPlayVideos = prefs[Keys.AUTO_PLAY] ?: true,
-            showFewerAds = prefs[Keys.FEWER_ADS] ?: false,
-            cloudinaryCloudName = prefs[Keys.CLOUDINARY_CLOUD] ?: "",
-            cloudinaryUploadPreset = prefs[Keys.CLOUDINARY_PRESET] ?: ""
-        )
-    }
+    val prefsFlow: Flow<LocalAppPrefs> = dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                emit(emptyPreferences())
+            }
+        }
+        .map { prefs ->
+            LocalAppPrefs(
+                onboardingCompleted = prefs[Keys.ONBOARDING_COMPLETED] ?: false,
+                permissionsPrompted = prefs[Keys.PERMISSIONS_PROMPTED] ?: false,
+                themeMode = prefs[Keys.THEME_MODE] ?: "dark",
+                fontSize = prefs[Keys.FONT_SIZE] ?: "medium",
+                language = prefs[Keys.LANGUAGE] ?: GlobalLanguages.detectDeviceLanguage(),
+                dataSaver = prefs[Keys.DATA_SAVER] ?: false,
+                autoPlayVideos = prefs[Keys.AUTO_PLAY] ?: true,
+                showFewerAds = prefs[Keys.FEWER_ADS] ?: false,
+                cloudinaryCloudName = prefs[Keys.CLOUDINARY_CLOUD] ?: "",
+                cloudinaryUploadPreset = prefs[Keys.CLOUDINARY_PRESET] ?: ""
+            )
+        }
 
     suspend fun setOnboardingCompleted(completed: Boolean) {
         dataStore.edit { it[Keys.ONBOARDING_COMPLETED] = completed }

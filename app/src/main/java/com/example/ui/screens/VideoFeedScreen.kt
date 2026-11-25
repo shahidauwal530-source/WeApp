@@ -256,7 +256,7 @@ fun VideoFeedScreen(
                                             type = "text/plain"
                                             putExtra(Intent.EXTRA_TEXT, "Watch '${reel.title}' by ${reel.authorName} on WeApp!")
                                         }
-                                        context.startActivity(Intent.createChooser(intent, strings.share))
+                                        runCatching { context.startActivity(Intent.createChooser(intent, strings.share)) }
                                     }
                                 )
                             }

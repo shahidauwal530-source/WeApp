@@ -201,8 +201,7 @@ fun SearchScreen(
         }
     }
 
-    if (inspectedUser != null) {
-        val u = inspectedUser!!
+    inspectedUser?.let { u ->
         val isSelf = u.userId == currentUser.userId
         val isFollowing = u.userId in followingIds
         val canFollow = when (u.privacyFollow) {
@@ -284,12 +283,12 @@ fun SearchScreen(
         )
     }
 
-    if (reportingUser != null) {
+    reportingUser?.let { targetUser ->
         ReportContentDialog(
-            title = "Report ${reportingUser!!.displayName}",
+            title = "Report ${targetUser.displayName}",
             onDismiss = { reportingUser = null },
             onSubmit = { reason, details ->
-                onReportUser(reportingUser!!.userId, reason, details)
+                onReportUser(targetUser.userId, reason, details)
                 reportingUser = null
             }
         )

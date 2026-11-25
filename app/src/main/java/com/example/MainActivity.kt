@@ -14,7 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
-import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -39,6 +38,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class SecondaryRoute {
@@ -60,10 +60,10 @@ private enum class SecondaryRoute {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (FirebaseApp.getApps(this).isEmpty()) {
+        if (runCatching { FirebaseApp.getApps(this).isEmpty() }.getOrDefault(false)) {
             runCatching { FirebaseApp.initializeApp(this) }
         }
-        enableEdgeToEdge()
+        runCatching { enableEdgeToEdge() }
         setContent {
             WeAppRoot()
         }
@@ -79,8 +79,15 @@ fun WeAppRoot() {
     val localPrefs = loadedPrefs ?: LocalAppPrefs()
     val strings = remember(localPrefs.language) { stringsFor(localPrefs.language) }
 
+    val hasFirebase = remember(context) {
+        runCatching { FirebaseApp.getApps(context).isNotEmpty() }.getOrDefault(false)
+    }
     var showSplash by remember { mutableStateOf(true) }
-    var currentUser by remember { mutableStateOf(runCatching { Firebase.auth.currentUser }.getOrNull()) }
+    var currentUser by remember {
+        mutableStateOf(
+            if (hasFirebase) runCatching { Firebase.auth.currentUser }.getOrNull() else null
+        )
+    }
     var permissionNotice by remember { mutableStateOf<String?>(null) }
     val rootSnackbarHostState = remember { SnackbarHostState() }
 
@@ -106,6 +113,7 @@ fun WeAppRoot() {
     LaunchedEffect(showSplash, loadedPrefs) {
         val prefs = loadedPrefs ?: return@LaunchedEffect
         if (!showSplash && !prefs.permissionsPrompted) {
+            delay(250)
             val missingPermissions = WeAppPermissions.missingRuntimePermissions(context)
             if (missingPermissions.isEmpty()) {
                 prefsStore.setPermissionsPrompted(true)
@@ -119,7 +127,8 @@ fun WeAppRoot() {
         }
     }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(hasFirebase) {
+        if (!hasFirebase) return@DisposableEffect onDispose {}
         val auth = runCatching { Firebase.auth }.getOrNull()
         val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
             currentUser = firebaseAuth.currentUser
@@ -128,13 +137,16 @@ fun WeAppRoot() {
         onDispose { auth?.removeAuthStateListener(listener) }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(hasFirebase) {
+        if (!hasFirebase) return@LaunchedEffect
         runCatching {
             val credentialManager = CredentialManager.create(context)
             GoogleAuthHelper.attemptAutoSignIn(
                 context = context,
                 credentialManager = credentialManager,
-                onAuthSuccess = { currentUser = runCatching { Firebase.auth.currentUser }.getOrNull() },
+                onAuthSuccess = {
+                    currentUser = runCatching { Firebase.auth.currentUser }.getOrNull()
+                },
                 onUnauthenticated = {},
                 scope = scope
             )
@@ -211,15 +223,30 @@ private fun AuthenticatedWeApp(
     prefsStore: UserPreferencesDataStore,
     onSignOut: () -> Unit
 ) {
+    val context = LocalContext.current
     val uid = firebaseUser.uid
+    val firestoreInitResult = remember(context) {
+        runCatching {
+            val dbId = context.getString(R.string.firestore_database_id)
+            FirebaseFirestore.getInstance(dbId)
+        }
+    }
+    val firestore = firestoreInitResult.getOrNull()
+    if (firestore == null) {
+        val err = firestoreInitResult.exceptionOrNull()?.localizedMessage ?: "Cloud database unavailable."
+        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Unable to connect to WeApp Cloud: $err")
+                Button(onClick = onSignOut) { Text("Back to Sign In") }
+            }
+        }
+        return
+    }
     val viewModel: MainViewModel = viewModel(
         key = uid,
         factory = viewModelFactory {
             initializer {
-                val app = checkNotNull(this[APPLICATION_KEY])
-                val dbId = app.getString(R.string.firestore_database_id)
-                val db = FirebaseFirestore.getInstance(dbId)
-                MainViewModel(WeAppRepository(db), uid)
+                MainViewModel(WeAppRepository(firestore), uid)
             }
         }
     )

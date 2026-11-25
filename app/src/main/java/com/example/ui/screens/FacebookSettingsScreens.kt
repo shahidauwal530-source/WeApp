@@ -699,7 +699,7 @@ fun SecuritySettingsScreen(
                             putExtra(Intent.EXTRA_SUBJECT, "WeApp_My_Data.json")
                             putExtra(Intent.EXTRA_TEXT, jsonPayload)
                         }
-                        context.startActivity(Intent.createChooser(intent, "Download My WeApp Data"))
+                        runCatching { context.startActivity(Intent.createChooser(intent, "Download My WeApp Data")) }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(50.dp),

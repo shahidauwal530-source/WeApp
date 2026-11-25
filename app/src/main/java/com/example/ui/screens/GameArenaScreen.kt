@@ -354,13 +354,13 @@ fun GameArenaScreen(
         }
     }
 
-    if (dialogMode != null) {
+    dialogMode?.let { activeMode ->
         CreateChallengeDialog(
-            mode = dialogMode!!,
+            mode = activeMode,
             defaultGame = selectedGame,
             onDismiss = { dialogMode = null },
             onSubmit = { game, note, stake ->
-                onCreateChallenge(game, dialogMode!!, note, stake)
+                onCreateChallenge(game, activeMode, note, stake)
                 dialogMode = null
             }
         )

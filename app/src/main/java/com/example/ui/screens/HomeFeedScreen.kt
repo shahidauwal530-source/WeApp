@@ -445,7 +445,7 @@ fun HomeFeedScreen(
                                         type = "text/plain"
                                         putExtra(Intent.EXTRA_TEXT, "${post.authorName} on WeApp: ${post.content}")
                                     }
-                                    context.startActivity(Intent.createChooser(shareIntent, strings.share))
+                                    runCatching { context.startActivity(Intent.createChooser(shareIntent, strings.share)) }
                                 },
                                 onFollow = { onToggleFollow(post.authorId, post.authorName) },
                                 onHide = { onHidePost(post.id) },
@@ -471,8 +471,7 @@ fun HomeFeedScreen(
         )
     }
 
-    if (viewingStory != null) {
-        val story = viewingStory!!
+    viewingStory?.let { story ->
         AlertDialog(
             onDismissRequest = { viewingStory = null },
             confirmButton = {
@@ -517,12 +516,12 @@ fun HomeFeedScreen(
         )
     }
 
-    if (reportingPostId != null) {
+    reportingPostId?.let { targetPostId ->
         ReportContentDialog(
             title = "Report Post",
             onDismiss = { reportingPostId = null },
             onSubmit = { reason, details ->
-                onReportPost(reportingPostId!!, reason, details)
+                onReportPost(targetPostId, reason, details)
                 reportingPostId = null
             }
         )
