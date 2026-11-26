@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 
 private val WeDarkColorScheme = darkColorScheme(
@@ -63,9 +64,10 @@ fun WeAppTheme(
         else -> true
     }
     val colorScheme = if (isDark) WeDarkColorScheme else WeLightColorScheme
+    val typography = remember(fontSize) { weAppTypography(fontSize) }
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = weAppTypography(fontSize),
+        typography = typography,
         content = content
     )
 }

@@ -22,6 +22,8 @@ private val Context.weAppDataStore: DataStore<Preferences> by preferencesDataSto
 data class LocalAppPrefs(
     val onboardingCompleted: Boolean = false,
     val permissionsPrompted: Boolean = false,
+    val rememberSession: Boolean = true,
+    val lastSignedInHint: String = "",
     val themeMode: String = "dark",
     val fontSize: String = "medium",
     val language: String = GlobalLanguages.detectDeviceLanguage(),
@@ -38,6 +40,8 @@ class UserPreferencesDataStore(context: Context) {
     private object Keys {
         val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         val PERMISSIONS_PROMPTED = booleanPreferencesKey("permissions_prompted")
+        val REMEMBER_SESSION = booleanPreferencesKey("remember_session")
+        val LAST_SIGN_IN_HINT = stringPreferencesKey("last_sign_in_hint")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val FONT_SIZE = stringPreferencesKey("font_size")
         val LANGUAGE = stringPreferencesKey("language")
@@ -60,6 +64,8 @@ class UserPreferencesDataStore(context: Context) {
             LocalAppPrefs(
                 onboardingCompleted = prefs[Keys.ONBOARDING_COMPLETED] ?: false,
                 permissionsPrompted = prefs[Keys.PERMISSIONS_PROMPTED] ?: false,
+                rememberSession = prefs[Keys.REMEMBER_SESSION] ?: true,
+                lastSignedInHint = prefs[Keys.LAST_SIGN_IN_HINT] ?: "",
                 themeMode = prefs[Keys.THEME_MODE] ?: "dark",
                 fontSize = prefs[Keys.FONT_SIZE] ?: "medium",
                 language = prefs[Keys.LANGUAGE] ?: GlobalLanguages.detectDeviceLanguage(),
@@ -77,6 +83,15 @@ class UserPreferencesDataStore(context: Context) {
 
     suspend fun setPermissionsPrompted(prompted: Boolean) {
         dataStore.edit { it[Keys.PERMISSIONS_PROMPTED] = prompted }
+    }
+
+    suspend fun setRememberSession(remember: Boolean, signInHint: String? = null) {
+        dataStore.edit {
+            it[Keys.REMEMBER_SESSION] = remember
+            if (signInHint != null) {
+                it[Keys.LAST_SIGN_IN_HINT] = if (remember) signInHint.trim() else ""
+            }
+        }
     }
 
     suspend fun setThemeMode(mode: String) {

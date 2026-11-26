@@ -65,6 +65,7 @@ test("Global private user profile + Facebook privacy/security/notification updat
       countryCode: "GH",
       countryName: "Ghana",
       countryFlag: "🇬🇭",
+      state: "Greater Accra",
       city: "Accra",
       currencyCode: "GHS",
       bio: "Gaming & creator",
@@ -78,27 +79,77 @@ test("Global private user profile + Facebook privacy/security/notification updat
       themeMode: "dark",
       fontSize: "medium",
       language: "en",
+      passwordLockEnabled: true,
+      passwordHash: "pbkdf2_sha256:120000:c2FtcGxlX2hhc2hfYmFzZTY0",
+      passwordSalt: "c2FtcGxlX3NhbHRfYmFzZTY0",
+      passwordUpdatedAt: ts,
       accountStatus: "active",
       createdAt: ts,
       updatedAt: ts,
     })
   );
 
-  // Update Facebook-style privacy & notification & security settings
+  // Update Facebook-style privacy, notification, security, emailVerified, state & password fields
   await assertSucceeds(
     aliceDb.collection("users").doc(ALICE_UID).update({
+      state: "Ashanti",
       privacyPosts: "Friends",
       privacyMessage: "Everyone",
       twoFactorEnabled: true,
+      emailVerified: true,
+      emailVerifiedAt: pastTs(),
+      passwordLockEnabled: false,
+      passwordHash: "pbkdf2_sha256:120000:bmV3X2hhc2hfYmFzZTY0",
+      passwordSalt: "bmV3X3NhbHRfYmFzZTY0",
+      passwordUpdatedAt: pastTs(),
       notifLikes: false,
       language: "pcm",
       updatedAt: pastTs(),
     })
   );
 
-  // Bob cannot read or update Alice's private PII
+  // Public user profile cannot expose private passwordHash or emailVerified
+  await assertFails(
+    aliceDb.collection("users_public").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      username: "kwame_accra",
+      displayName: "Kwame Mensah",
+      city: "Accra",
+      plan: "FREE",
+      coins: 100,
+      rankPoints: 10,
+      followersCount: 0,
+      followingCount: 0,
+      postsCount: 0,
+      passwordHash: "should_fail",
+      visibility: "public",
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+  await assertFails(
+    aliceDb.collection("users_public").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      username: "kwame_accra",
+      displayName: "Kwame Mensah",
+      city: "Accra",
+      plan: "FREE",
+      coins: 100,
+      rankPoints: 10,
+      followersCount: 0,
+      followingCount: 0,
+      postsCount: 0,
+      emailVerified: true,
+      visibility: "public",
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Bob cannot read or update Alice's private PII or password hash
   await assertFails(bobDb.collection("users").doc(ALICE_UID).get());
   await assertFails(bobDb.collection("users").doc(ALICE_UID).update({ twoFactorEnabled: false, updatedAt: pastTs() }));
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).update({ passwordHash: "hijacked", updatedAt: pastTs() }));
   await assertFails(aliceDb.collection("users").doc(ALICE_UID).update({ isAdmin: true, updatedAt: pastTs() }));
   await assertFails(aliceDb.collection("users").doc(ALICE_UID).update({ city: "London", updatedAt: futureTs() }));
 });

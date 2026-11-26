@@ -26,11 +26,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.data.*
 import com.example.localization.AppStrings
 import com.example.permissions.WeAppPermissions
+import com.example.security.PasswordSecurity
 import com.example.ui.UiState
+import com.example.ui.components.EmailVerificationCard
 import com.example.ui.components.WeAppAvatar
 import com.example.ui.components.WeAppEmptyState
 import com.example.ui.components.WeAppGradientButton
@@ -596,7 +602,10 @@ fun SecuritySettingsScreen(
     currentUser: PrivateUser,
     sessionsState: UiState<List<LoginSession>>,
     strings: AppStrings,
-    onSaveSecurity: (twoFactor: Boolean, loginAlerts: Boolean) -> Unit,
+    isSubmitting: Boolean = false,
+    onSaveSecurity: (twoFactor: Boolean, loginAlerts: Boolean, passwordLock: Boolean) -> Unit,
+    onUpdatePassword: (currentPassword: String, newPassword: String, confirmPassword: String, onDone: () -> Unit) -> Unit = { _, _, _, onDone -> onDone() },
+    onEmailVerified: (email: String) -> Unit = {},
     onRevokeOtherSessions: () -> Unit,
     onDownloadData: (onReady: (String) -> Unit) -> Unit,
     onDeactivateAccount: () -> Unit,
@@ -608,6 +617,17 @@ fun SecuritySettingsScreen(
 
     var twoFactor by remember(currentUser.userId) { mutableStateOf(currentUser.twoFactorEnabled) }
     var loginAlerts by remember(currentUser.userId) { mutableStateOf(currentUser.loginAlertsEnabled) }
+    var passwordLock by remember(currentUser.userId) { mutableStateOf(currentUser.passwordLockEnabled) }
+    val hasExistingPassword = currentUser.passwordHash.isNotBlank() && currentUser.passwordSalt.isNotBlank()
+
+    var currentPasswordInput by remember { mutableStateOf("") }
+    var newPasswordInput by remember { mutableStateOf("") }
+    var confirmPasswordInput by remember { mutableStateOf("") }
+    var showCurrentPwd by remember { mutableStateOf(false) }
+    var showNewPwd by remember { mutableStateOf(false) }
+    var showConfirmPwd by remember { mutableStateOf(false) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+
     var showDeactivateDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -622,31 +642,229 @@ fun SecuritySettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Password & Google Sign-In Security Notice
+            if (currentUser.email.isNotBlank()) {
+                EmailVerificationCard(
+                    email = currentUser.email,
+                    isVerified = currentUser.emailVerified,
+                    strings = strings,
+                    currentLanguage = currentUser.language,
+                    darkSurface = false,
+                    onVerified = { verifiedEmail -> onEmailVerified(verifiedEmail) },
+                    modifier = Modifier.testTag("security_email_verification_card")
+                )
+            }
+
+            // Update / Set Password Card (writes salted PBKDF2 hash to Firestore)
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                modifier = Modifier.testTag("update_password_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            strings.updatePasswordTitle,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = (if (hasExistingPassword) WeEmerald else WeGold).copy(alpha = 0.16f)
+                        ) {
+                            Text(
+                                text = if (hasExistingPassword) "Protected" else "Not Set",
+                                color = if (hasExistingPassword) WeEmerald else WeGold,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        strings.updatePasswordSubtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (hasExistingPassword) {
+                        OutlinedTextField(
+                            value = currentPasswordInput,
+                            onValueChange = { currentPasswordInput = it.take(128); passwordError = null },
+                            label = { Text(strings.currentPasswordLabel) },
+                            leadingIcon = { Icon(Icons.Filled.LockOpen, contentDescription = null) },
+                            trailingIcon = {
+                                IconButton(onClick = { showCurrentPwd = !showCurrentPwd }) {
+                                    Icon(
+                                        if (showCurrentPwd) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        contentDescription = if (showCurrentPwd) "Hide password" else "Show password"
+                                    )
+                                }
+                            },
+                            visualTransformation = if (showCurrentPwd) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Next
+                            ),
+                            singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("current_password_input")
+                        )
+                    }
+
+                    val newStrength = remember(newPasswordInput) { PasswordSecurity.evaluateStrength(newPasswordInput) }
+                    OutlinedTextField(
+                        value = newPasswordInput,
+                        onValueChange = { newPasswordInput = it.take(128); passwordError = null },
+                        label = { Text(strings.newPasswordLabel) },
+                        leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
+                        trailingIcon = {
+                            IconButton(onClick = { showNewPwd = !showNewPwd }) {
+                                Icon(
+                                    if (showNewPwd) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = if (showNewPwd) "Hide password" else "Show password"
+                                )
+                            }
+                        },
+                        visualTransformation = if (showNewPwd) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Next
+                        ),
+                        supportingText = {
+                            if (newPasswordInput.isNotEmpty()) {
+                                val barColor = when (newStrength.score) {
+                                    0, 1 -> WeRose
+                                    2 -> WeGold
+                                    3 -> WeBlue
+                                    else -> WeEmerald
+                                }
+                                Text("Strength: ${newStrength.label} • 8+ chars, letters & numbers", color = barColor)
+                            } else {
+                                Text("Minimum 8 characters with letters & numbers")
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("new_password_input")
+                    )
+
+                    val confirmMatches = confirmPasswordInput.isNotEmpty() && newPasswordInput == confirmPasswordInput
+                    val confirmMismatch = confirmPasswordInput.isNotEmpty() && newPasswordInput != confirmPasswordInput
+                    OutlinedTextField(
+                        value = confirmPasswordInput,
+                        onValueChange = { confirmPasswordInput = it.take(128); passwordError = null },
+                        label = { Text(strings.confirmPasswordLabel) },
+                        leadingIcon = { Icon(Icons.Filled.VerifiedUser, contentDescription = null) },
+                        trailingIcon = {
+                            IconButton(onClick = { showConfirmPwd = !showConfirmPwd }) {
+                                Icon(
+                                    if (showConfirmPwd) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = if (showConfirmPwd) "Hide password" else "Show password"
+                                )
+                            }
+                        },
+                        visualTransformation = if (showConfirmPwd) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
+                        isError = confirmMismatch,
+                        supportingText = {
+                            when {
+                                confirmMatches -> Text("✓ Passwords match", color = WeEmerald)
+                                confirmMismatch -> Text("Passwords do not match", color = WeRose)
+                                else -> Text("Re-enter new password")
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("confirm_new_password_input")
+                    )
+
+                    if (passwordError != null) {
+                        Text(
+                            text = passwordError ?: "",
+                            color = WeRose,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+
+                    WeAppGradientButton(
+                        text = if (isSubmitting) "..." else strings.updatePasswordBtn,
+                        enabled = !isSubmitting,
+                        testTag = "update_password_button",
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            if (hasExistingPassword && currentPasswordInput.isEmpty()) {
+                                passwordError = "Enter your current password first."
+                                return@WeAppGradientButton
+                            }
+                            val err = PasswordSecurity.validateNewPassword(newPasswordInput, confirmPasswordInput)
+                            if (err != null) {
+                                passwordError = err
+                                return@WeAppGradientButton
+                            }
+                            onUpdatePassword(
+                                currentPasswordInput,
+                                newPasswordInput,
+                                confirmPasswordInput
+                            ) {
+                                currentPasswordInput = ""
+                                newPasswordInput = ""
+                                confirmPasswordInput = ""
+                                passwordError = null
+                            }
+                        }
+                    )
+                }
+            }
+
+            // Password & Google Sign-In Security Controls
             Card(
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Account Authentication & Password", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Account Authentication & Protection", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        "Your WeApp account is secured via Google Identity (${currentUser.email}). Manage your Google password and passkeys in your Google Account.",
+                        "Your WeApp account combines Google Identity (${currentUser.email}) with salted PBKDF2 password verification.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     HorizontalDivider()
+                    SettingsToggleRow(
+                        strings.requirePasswordLoginLabel,
+                        "Ask for your WeApp password when unlocking your account on sign-in",
+                        passwordLock
+                    ) {
+                        passwordLock = it
+                        onSaveSecurity(twoFactor, loginAlerts, passwordLock)
+                    }
                     SettingsToggleRow("Two-Factor Authentication (2FA)", "Require extra verification on unrecognized devices", twoFactor) {
                         twoFactor = it
-                        onSaveSecurity(twoFactor, loginAlerts)
+                        onSaveSecurity(twoFactor, loginAlerts, passwordLock)
                     }
                     SettingsToggleRow("Login Alerts", "Notify me immediately when a new session signs in", loginAlerts) {
                         loginAlerts = it
-                        onSaveSecurity(twoFactor, loginAlerts)
+                        onSaveSecurity(twoFactor, loginAlerts, passwordLock)
                     }
                 }
             }

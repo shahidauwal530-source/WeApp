@@ -3,6 +3,7 @@ package com.example.data
 import android.content.Context
 import android.os.Build
 import com.example.R
+import com.example.security.PasswordSecurity
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
@@ -354,20 +355,21 @@ class WeAppRepository(
     // --- Profile, Account & Global Settings ---
 
     suspend fun isUsernameAvailable(username: String): Boolean {
-        val clean = username.trim()
-        if (clean.length < 3 || !clean.matches(Regex("^[a-zA-Z0-9_]+$"))) return false
+        val clean = username.trim().lowercase().removePrefix("@")
+        if (clean.length < 3 || !clean.matches(Regex("^[a-z0-9_]+$"))) return false
         return try {
             requireUserId()
             val snap = db.collection("users_public")
                 .whereEqualTo("visibility", "public")
                 .get()
                 .await()
-            val users = snap.toObjects(PublicUser::class.java)
-            users.none { it.username.equals(clean, ignoreCase = true) }
+            snap.documents.none { doc ->
+                doc.getString("username")?.equals(clean, ignoreCase = true) == true
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            false
+            true
         }
     }
 
@@ -377,21 +379,27 @@ class WeAppRepository(
         email: String,
         phone: String,
         country: CountryInfo,
+        state: String = "",
         city: String,
         bio: String,
         dateOfBirth: String,
         gender: String,
         photoUrl: String,
         themeMode: String,
-        language: String
+        language: String,
+        passwordHash: String = "",
+        passwordSalt: String = "",
+        passwordLockEnabled: Boolean = false,
+        emailVerified: Boolean = false
     ): Result<Unit> {
         var path = "users"
         return try {
             val uid = requireUserId()
-            val cleanUsername = username.trim().take(30)
+            val cleanUsername = username.trim().lowercase().removePrefix("@").take(30)
             val cleanName = displayName.trim().take(50)
             val cleanEmail = email.trim().take(120)
             val cleanPhone = phone.trim().take(25)
+            val cleanState = state.trim().ifBlank { country.defaultState }.take(60)
             val cleanCity = city.trim().ifBlank { country.defaultCity }.take(60)
             val cleanBio = bio.trim().take(200)
             val cleanDob = dateOfBirth.trim().take(30)
@@ -407,16 +415,21 @@ class WeAppRepository(
             require(cleanEmail.contains("@")) { "Valid email is required" }
             require(cleanPhone.length >= 7) { "Valid phone number is required" }
 
-            val existingUsers = db.collection("users_public")
+            val existingSnap = db.collection("users_public")
                 .whereEqualTo("visibility", "public")
                 .get()
                 .await()
-                .toObjects(PublicUser::class.java)
-            require(existingUsers.none { it.userId != uid && it.username.equals(cleanUsername, ignoreCase = true) }) {
+            require(
+                existingSnap.documents.none { doc ->
+                    val existingUid = doc.getString("userId") ?: doc.id
+                    val existingUsername = doc.getString("username") ?: ""
+                    existingUid != uid && existingUsername.equals(cleanUsername, ignoreCase = true)
+                }
+            ) {
                 "Username @$cleanUsername is already taken. Choose another one."
             }
 
-            val privatePayload = mapOf(
+            val privatePayload = mutableMapOf<String, Any>(
                 "userId" to uid,
                 "username" to cleanUsername,
                 "displayName" to cleanName,
@@ -425,6 +438,7 @@ class WeAppRepository(
                 "countryCode" to country.code,
                 "countryName" to country.name,
                 "countryFlag" to country.flag,
+                "state" to cleanState,
                 "city" to cleanCity,
                 "currencyCode" to country.currencyCode,
                 "bio" to cleanBio,
@@ -442,10 +456,24 @@ class WeAppRepository(
                 "themeMode" to safeTheme,
                 "fontSize" to "medium",
                 "language" to safeLang,
+                "passwordLockEnabled" to passwordLockEnabled,
+                "emailVerified" to (
+                    emailVerified ||
+                        (auth.currentUser?.isEmailVerified == true &&
+                            auth.currentUser?.email?.equals(cleanEmail, ignoreCase = true) == true)
+                    ),
                 "accountStatus" to "active",
                 "createdAt" to FieldValue.serverTimestamp(),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
+            if (privatePayload["emailVerified"] == true) {
+                privatePayload["emailVerifiedAt"] = FieldValue.serverTimestamp()
+            }
+            if (passwordHash.isNotBlank() && passwordSalt.isNotBlank()) {
+                privatePayload["passwordHash"] = passwordHash.take(200)
+                privatePayload["passwordSalt"] = passwordSalt.take(100)
+                privatePayload["passwordUpdatedAt"] = FieldValue.serverTimestamp()
+            }
             val publicPayload = mapOf(
                 "userId" to uid,
                 "username" to cleanUsername,
@@ -453,6 +481,7 @@ class WeAppRepository(
                 "countryCode" to country.code,
                 "countryName" to country.name,
                 "countryFlag" to country.flag,
+                "state" to cleanState,
                 "city" to cleanCity,
                 "bio" to cleanBio,
                 "photoUrl" to resolvedPhoto,
@@ -480,13 +509,17 @@ class WeAppRepository(
                 "createdAt" to FieldValue.serverTimestamp()
             )
             val notifRef = db.collection("users").document(uid).collection("notifications").document()
+            val locationSummary = listOf(cleanCity, cleanState, country.name)
+                .filter { it.isNotBlank() }
+                .distinct()
+                .joinToString(", ")
             val notifPayload = mapOf(
                 "userId" to uid,
                 "actorId" to uid,
                 "actorName" to "WeApp Global",
                 "notifType" to "system",
                 "title" to "Welcome to WeApp ${country.flag}",
-                "body" to "Your global account is live in $cleanCity, ${country.name}. +100 WeCoins added!",
+                "body" to "Your global account is live in $locationSummary. +100 WeCoins added!",
                 "readFlag" to false,
                 "createdAt" to FieldValue.serverTimestamp()
             )
@@ -527,6 +560,7 @@ class WeAppRepository(
         dateOfBirth: String,
         gender: String,
         country: CountryInfo,
+        state: String = "",
         city: String,
         bio: String,
         website: String,
@@ -534,7 +568,8 @@ class WeAppRepository(
         education: String,
         relationshipStatus: String,
         photoUrl: String,
-        coverPhotoUrl: String
+        coverPhotoUrl: String,
+        emailVerified: Boolean? = null
     ): Result<Unit> {
         var path = "users"
         return try {
@@ -543,6 +578,7 @@ class WeAppRepository(
             val cleanUsername = username.trim().take(30)
             val cleanEmail = email.trim().take(120)
             val cleanPhone = phone.trim().take(25)
+            val cleanState = state.trim().ifBlank { country.defaultState }.take(60)
             val cleanCity = city.trim().ifBlank { country.defaultCity }.take(60)
             require(cleanName.isNotEmpty()) { "Full name is required" }
             require(cleanUsername.length >= 3) { "Username must be at least 3 characters" }
@@ -550,7 +586,7 @@ class WeAppRepository(
             require(cleanPhone.length >= 7) { "Valid phone is required" }
 
             path = "users/$uid"
-            val privateUpdates = mapOf(
+            val privateUpdates = mutableMapOf<String, Any>(
                 "displayName" to cleanName,
                 "username" to cleanUsername,
                 "email" to cleanEmail,
@@ -561,6 +597,7 @@ class WeAppRepository(
                 "countryName" to country.name,
                 "countryFlag" to country.flag,
                 "currencyCode" to country.currencyCode,
+                "state" to cleanState,
                 "city" to cleanCity,
                 "bio" to bio.trim().take(200),
                 "website" to website.trim().take(150),
@@ -572,12 +609,19 @@ class WeAppRepository(
                 "accountStatus" to "active",
                 "updatedAt" to FieldValue.serverTimestamp()
             )
+            if (emailVerified != null) {
+                privateUpdates["emailVerified"] = emailVerified
+                if (emailVerified) {
+                    privateUpdates["emailVerifiedAt"] = FieldValue.serverTimestamp()
+                }
+            }
             val publicUpdates = mapOf(
                 "displayName" to cleanName,
                 "username" to cleanUsername,
                 "countryCode" to country.code,
                 "countryName" to country.name,
                 "countryFlag" to country.flag,
+                "state" to cleanState,
                 "city" to cleanCity,
                 "bio" to bio.trim().take(200),
                 "website" to website.trim().take(150),
@@ -594,6 +638,32 @@ class WeAppRepository(
             batch.update(db.collection("users").document(uid), privateUpdates)
             batch.update(db.collection("users_public").document(uid), publicUpdates)
             batch.commit().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun markEmailVerified(email: String): Result<Unit> {
+        var path = "users"
+        return try {
+            val uid = requireUserId()
+            val cleanEmail = email.trim().take(120)
+            require(cleanEmail.contains("@")) { "Valid email is required" }
+            path = "users/$uid"
+            db.collection("users").document(uid)
+                .update(
+                    mapOf(
+                        "email" to cleanEmail,
+                        "emailVerified" to true,
+                        "emailVerifiedAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                .await()
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -699,7 +769,8 @@ class WeAppRepository(
 
     suspend fun updateSecuritySettings(
         twoFactorEnabled: Boolean,
-        loginAlertsEnabled: Boolean
+        loginAlertsEnabled: Boolean,
+        passwordLockEnabled: Boolean = false
     ): Result<Unit> {
         var path = "users"
         return try {
@@ -709,9 +780,70 @@ class WeAppRepository(
                 mapOf(
                     "twoFactorEnabled" to twoFactorEnabled,
                     "loginAlertsEnabled" to loginAlertsEnabled,
+                    "passwordLockEnabled" to passwordLockEnabled,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateAccountPassword(
+        currentPassword: String,
+        newPassword: String,
+        confirmPassword: String,
+        bypassCurrentCheck: Boolean = false
+    ): Result<Unit> {
+        var path = "users"
+        return try {
+            val uid = requireUserId()
+            path = "users/$uid"
+            val validationError = PasswordSecurity.validateNewPassword(newPassword, confirmPassword)
+            require(validationError == null) { validationError ?: "Invalid password" }
+
+            val userRef = db.collection("users").document(uid)
+            val snapshot = userRef.get().await()
+            val existingHash = snapshot.getString("passwordHash").orEmpty()
+            val existingSalt = snapshot.getString("passwordSalt").orEmpty()
+            if (!bypassCurrentCheck && existingHash.isNotBlank() && existingSalt.isNotBlank()) {
+                require(PasswordSecurity.verifyPassword(currentPassword, existingHash, existingSalt)) {
+                    "Current password is incorrect."
+                }
+            }
+
+            val hashed = PasswordSecurity.hashPassword(newPassword)
+            val batch = db.batch()
+            batch.update(
+                userRef,
+                mapOf(
+                    "passwordHash" to hashed.hash,
+                    "passwordSalt" to hashed.salt,
+                    "passwordUpdatedAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+            if (snapshot.getBoolean("loginAlertsEnabled") != false) {
+                val notifRef = userRef.collection("notifications").document()
+                batch.set(
+                    notifRef,
+                    mapOf(
+                        "userId" to uid,
+                        "actorId" to uid,
+                        "actorName" to "WeApp Security",
+                        "notifType" to "security",
+                        "title" to "Password Updated",
+                        "body" to "Your WeApp account password was updated securely.",
+                        "readFlag" to false,
+                        "createdAt" to FieldValue.serverTimestamp()
+                    )
+                )
+            }
+            batch.commit().await()
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e

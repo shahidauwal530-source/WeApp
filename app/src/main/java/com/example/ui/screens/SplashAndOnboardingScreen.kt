@@ -1,7 +1,6 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -19,11 +18,13 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.R
 import com.example.data.GlobalLanguages
 import com.example.localization.AppStrings
@@ -62,8 +63,14 @@ fun SplashScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier.padding(32.dp)
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.ic_weapp_foreground),
+            val splashContext = LocalContext.current
+            AsyncImage(
+                model = remember(splashContext) {
+                    ImageRequest.Builder(splashContext)
+                        .data(R.drawable.ic_weapp_foreground)
+                        .crossfade(false)
+                        .build()
+                },
                 contentDescription = strings.appName,
                 modifier = Modifier
                     .size(116.dp)
@@ -174,8 +181,14 @@ fun OnboardingScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Image(
-                        painter = painterResource(id = page.imageRes),
+                    val pageContext = LocalContext.current
+                    AsyncImage(
+                        model = remember(pageContext, page.imageRes) {
+                            ImageRequest.Builder(pageContext)
+                                .data(page.imageRes)
+                                .crossfade(true)
+                                .build()
+                        },
                         contentDescription = page.title,
                         modifier = Modifier
                             .fillMaxWidth()

@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.data.*
 import com.example.localization.AppStrings
+import com.example.ui.components.EmailVerificationCard
 import com.example.ui.components.WeAppAvatar
 import com.example.ui.components.WeAppGradientButton
 import com.example.ui.components.WeSecondaryTopBar
@@ -47,6 +48,7 @@ fun EditProfileScreen(
         dateOfBirth: String,
         gender: String,
         country: CountryInfo,
+        state: String,
         city: String,
         bio: String,
         website: String,
@@ -54,7 +56,8 @@ fun EditProfileScreen(
         education: String,
         relationshipStatus: String,
         photoUrl: String,
-        coverPhotoUrl: String
+        coverPhotoUrl: String,
+        emailVerified: Boolean?
     ) -> Unit,
     onShowMessage: (String) -> Unit,
     onBack: () -> Unit
@@ -66,10 +69,20 @@ fun EditProfileScreen(
     var displayName by remember(currentUser.userId) { mutableStateOf(currentUser.displayName) }
     var username by remember(currentUser.userId) { mutableStateOf(currentUser.username) }
     var email by remember(currentUser.userId) { mutableStateOf(currentUser.email) }
+    var verifiedEmailAddress by remember(currentUser.userId) {
+        mutableStateOf(
+            if (currentUser.emailVerified && currentUser.email.isNotBlank()) {
+                currentUser.email.trim().lowercase()
+            } else null
+        )
+    }
     var phone by remember(currentUser.userId) { mutableStateOf(currentUser.phone) }
     var dob by remember(currentUser.userId) { mutableStateOf(currentUser.dateOfBirth) }
     var gender by remember(currentUser.userId) { mutableStateOf(currentUser.gender) }
     var selectedCountry by remember(currentUser.userId) { mutableStateOf(GlobalCountries.byCode(currentUser.countryCode)) }
+    var selectedState by remember(currentUser.userId) {
+        mutableStateOf(currentUser.state.ifBlank { GlobalCountries.byCode(currentUser.countryCode).defaultState })
+    }
     var city by remember(currentUser.userId) { mutableStateOf(currentUser.city) }
     var bio by remember(currentUser.userId) { mutableStateOf(currentUser.bio) }
     var website by remember(currentUser.userId) { mutableStateOf(currentUser.website) }
@@ -83,6 +96,7 @@ fun EditProfileScreen(
     var uploadPresetInput by remember(cloudinaryUploadPreset) { mutableStateOf(cloudinaryUploadPreset) }
     var uploadingMedia by remember { mutableStateOf(false) }
     var showCountryPicker by remember { mutableStateOf(false) }
+    var showStatePicker by remember { mutableStateOf(false) }
 
     val profilePhotoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -219,12 +233,20 @@ fun EditProfileScreen(
             // Identity & Contact
             OutlinedTextField(value = displayName, onValueChange = { displayName = it.take(50) }, label = { Text(strings.displayNameLabel) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = username, onValueChange = { username = it.take(30) }, label = { Text(strings.usernameLabel) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = email, onValueChange = { email = it.take(120) }, label = { Text(strings.emailLabel) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = email, onValueChange = { email = it.take(120) }, label = { Text(strings.emailLabel) }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("edit_email_input"))
+            EmailVerificationCard(
+                email = email,
+                isVerified = verifiedEmailAddress?.equals(email.trim(), ignoreCase = true) == true,
+                strings = strings,
+                currentLanguage = currentUser.language,
+                darkSurface = false,
+                onVerified = { verifiedEmail -> verifiedEmailAddress = verifiedEmail }
+            )
             OutlinedTextField(value = phone, onValueChange = { phone = it.take(25) }, label = { Text(strings.phoneLabel) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = dob, onValueChange = { dob = it.take(30) }, label = { Text("Date of Birth (e.g. 1999-05-12)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = gender, onValueChange = { gender = it.take(30) }, label = { Text("Gender") }, singleLine = true, modifier = Modifier.fillMaxWidth())
 
-            // Country & City
+            // Country, State & City
             OutlinedCard(
                 onClick = { showCountryPicker = true },
                 shape = RoundedCornerShape(14.dp),
@@ -237,6 +259,30 @@ fun EditProfileScreen(
                 ) {
                     Text("${selectedCountry.flag} ${selectedCountry.name} (${selectedCountry.currencyCode})", style = MaterialTheme.typography.titleMedium)
                     Icon(Icons.Filled.ArrowDropDown, contentDescription = strings.countryLabel)
+                }
+            }
+            OutlinedCard(
+                onClick = { showStatePicker = true },
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth().testTag("edit_state_picker")
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            "${strings.stateLabel} • ${selectedCountry.name}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            selectedState.ifBlank { strings.selectStateTitle },
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = strings.selectStateTitle)
                 }
             }
             OutlinedTextField(value = city, onValueChange = { city = it.take(60) }, label = { Text(strings.cityLabel) }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -256,11 +302,12 @@ fun EditProfileScreen(
                 modifier = Modifier.fillMaxWidth(),
                 testTag = "save_account_settings_button",
                 onClick = {
+                    val isEmailVerifiedNow = verifiedEmailAddress?.equals(email.trim(), ignoreCase = true) == true
                     onSaveCloudinaryConfig(cloudNameInput, uploadPresetInput)
                     onSaveAccount(
                         displayName, username, email, phone, dob, gender,
-                        selectedCountry, city, bio, website, work, education,
-                        relationshipStatus, photoUrl, coverPhotoUrl
+                        selectedCountry, selectedState, city, bio, website, work, education,
+                        relationshipStatus, photoUrl, coverPhotoUrl, isEmailVerifiedNow
                     )
                 }
             )
@@ -275,8 +322,22 @@ fun EditProfileScreen(
             onDismiss = { showCountryPicker = false },
             onSelect = { info ->
                 selectedCountry = info
+                selectedState = info.defaultState
                 city = info.defaultCity
                 showCountryPicker = false
+            }
+        )
+    }
+
+    if (showStatePicker) {
+        StatePickerDialog(
+            title = strings.selectStateTitle,
+            country = selectedCountry,
+            selectedState = selectedState,
+            onDismiss = { showStatePicker = false },
+            onSelect = { st ->
+                selectedState = st
+                showStatePicker = false
             }
         )
     }

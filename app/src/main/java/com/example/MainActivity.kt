@@ -25,6 +25,7 @@ import com.example.data.UserPreferencesDataStore
 import com.example.data.WeAppRepository
 import com.example.localization.stringsFor
 import com.example.permissions.WeAppPermissions
+import com.example.security.PasswordSecurity
 import com.example.ui.MainViewModel
 import com.example.ui.UiState
 import com.example.ui.components.MainTab
@@ -88,44 +89,9 @@ fun WeAppRoot() {
             if (hasFirebase) runCatching { Firebase.auth.currentUser }.getOrNull() else null
         )
     }
-    var permissionNotice by remember { mutableStateOf<String?>(null) }
-    val rootSnackbarHostState = remember { SnackbarHostState() }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        scope.launch {
-            prefsStore.setPermissionsPrompted(true)
-        }
-        if (results.values.any { granted -> !granted }) {
-            permissionNotice = "Some permissions were denied. You can continue using WeApp or enable them later in Settings."
-        }
-    }
-
-    LaunchedEffect(permissionNotice) {
-        val msg = permissionNotice
-        if (msg != null) {
-            rootSnackbarHostState.showSnackbar(msg)
-            permissionNotice = null
-        }
-    }
-
-    LaunchedEffect(showSplash, loadedPrefs) {
-        val prefs = loadedPrefs ?: return@LaunchedEffect
-        if (!showSplash && !prefs.permissionsPrompted) {
-            delay(250)
-            val missingPermissions = WeAppPermissions.missingRuntimePermissions(context)
-            if (missingPermissions.isEmpty()) {
-                prefsStore.setPermissionsPrompted(true)
-            } else {
-                runCatching {
-                    permissionLauncher.launch(missingPermissions.toTypedArray())
-                }.onFailure {
-                    prefsStore.setPermissionsPrompted(true)
-                }
-            }
-        }
-    }
+    var pendingSignUpDraft by remember { mutableStateOf<PendingSignUpDraft?>(null) }
+    var pendingSignInHint by remember { mutableStateOf<PendingSignInHint?>(null) }
+    var autoSignInChecked by remember { mutableStateOf(false) }
 
     DisposableEffect(hasFirebase) {
         if (!hasFirebase) return@DisposableEffect onDispose {}
@@ -137,8 +103,14 @@ fun WeAppRoot() {
         onDispose { auth?.removeAuthStateListener(listener) }
     }
 
-    LaunchedEffect(hasFirebase) {
-        if (!hasFirebase) return@LaunchedEffect
+    LaunchedEffect(hasFirebase, loadedPrefs, showSplash, currentUser) {
+        val prefs = loadedPrefs ?: return@LaunchedEffect
+        if (!hasFirebase || showSplash || !prefs.onboardingCompleted || currentUser != null || autoSignInChecked) {
+            return@LaunchedEffect
+        }
+        autoSignInChecked = true
+        if (!prefs.rememberSession) return@LaunchedEffect
+        delay(300)
         runCatching {
             val credentialManager = CredentialManager.create(context)
             GoogleAuthHelper.attemptAutoSignIn(
@@ -177,7 +149,20 @@ fun WeAppRoot() {
                     AuthScreen(
                         strings = strings,
                         currentLanguage = localPrefs.language,
+                        initialRememberSession = localPrefs.rememberSession,
+                        initialSignInHint = localPrefs.lastSignedInHint,
                         onToggleLanguage = { lang -> scope.launch { prefsStore.setLanguage(lang) } },
+                        onRememberSessionChanged = { rememberMe, hint ->
+                            scope.launch { prefsStore.setRememberSession(rememberMe, hint) }
+                        },
+                        onSignInHintPrepared = { hint ->
+                            pendingSignInHint = hint
+                            pendingSignUpDraft = null
+                        },
+                        onSignUpDraftPrepared = { draft ->
+                            pendingSignUpDraft = draft
+                            pendingSignInHint = null
+                        },
                         onAuthSuccess = { currentUser = runCatching { Firebase.auth.currentUser }.getOrNull() }
                     )
                 }
@@ -185,33 +170,34 @@ fun WeAppRoot() {
                     val user = currentUser
                     if (user != null) {
                         key(user.uid) {
-                        AuthenticatedWeApp(
-                            firebaseUser = user,
-                            localPrefs = localPrefs,
-                            prefsStore = prefsStore,
-                            onSignOut = {
-                                runCatching {
-                                    val cm = CredentialManager.create(context)
-                                    GoogleAuthHelper.signOut(cm, scope) {
+                            AuthenticatedWeApp(
+                                firebaseUser = user,
+                                localPrefs = localPrefs,
+                                prefsStore = prefsStore,
+                                pendingSignUpDraft = pendingSignUpDraft,
+                                pendingSignInHint = pendingSignInHint,
+                                onClearPendingDrafts = {
+                                    pendingSignUpDraft = null
+                                    pendingSignInHint = null
+                                },
+                                onSignOut = {
+                                    pendingSignUpDraft = null
+                                    pendingSignInHint = null
+                                    runCatching {
+                                        val cm = CredentialManager.create(context)
+                                        GoogleAuthHelper.signOut(cm, scope) {
+                                            currentUser = null
+                                        }
+                                    }.onFailure {
+                                        runCatching { Firebase.auth.signOut() }
                                         currentUser = null
                                     }
-                                }.onFailure {
-                                    runCatching { Firebase.auth.signOut() }
-                                    currentUser = null
                                 }
-                            }
-                        )
-                    }
+                            )
+                        }
                     }
                 }
             }
-
-            SnackbarHost(
-                hostState = rootSnackbarHostState,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-            )
         }
     }
 }
@@ -221,6 +207,9 @@ private fun AuthenticatedWeApp(
     firebaseUser: FirebaseUser,
     localPrefs: LocalAppPrefs,
     prefsStore: UserPreferencesDataStore,
+    pendingSignUpDraft: PendingSignUpDraft? = null,
+    pendingSignInHint: PendingSignInHint? = null,
+    onClearPendingDrafts: () -> Unit = {},
     onSignOut: () -> Unit
 ) {
     val context = LocalContext.current
@@ -289,27 +278,35 @@ private fun AuthenticatedWeApp(
                         cloudinaryCloudName = localPrefs.cloudinaryCloudName,
                         cloudinaryUploadPreset = localPrefs.cloudinaryUploadPreset,
                         strings = strings,
+                        currentLanguage = localPrefs.language,
                         isSubmitting = isSubmitting,
+                        initialSignUpDraft = pendingSignUpDraft,
+                        initialSignInHint = pendingSignInHint,
                         onCheckUsername = { viewModel.checkUsernameAvailable(it) },
                         onSaveCloudinaryConfig = { c, p ->
                             scope.launch { prefsStore.setCloudinaryConfig(c, p) }
                         },
                         onShowMessage = { viewModel.showMessage(it) },
                         onSignOut = onSignOut,
-                        onSubmitProfile = { username, displayName, email, phone, country, city, bio, dateOfBirth, gender, photoUrl ->
+                        onSubmitProfile = { username, displayName, email, phone, country, state, city, bio, dateOfBirth, gender, photoUrl, passwordHash, passwordSalt, passwordLockEnabled, emailVerified ->
                             viewModel.completeProfile(
                                 username = username,
                                 displayName = displayName,
                                 email = email,
                                 phone = phone,
                                 country = country,
+                                state = state,
                                 city = city,
                                 bio = bio,
                                 dateOfBirth = dateOfBirth,
                                 gender = gender,
                                 photoUrl = photoUrl,
                                 themeMode = localPrefs.themeMode,
-                                language = localPrefs.language
+                                language = localPrefs.language,
+                                passwordHash = passwordHash,
+                                passwordSalt = passwordSalt,
+                                passwordLockEnabled = passwordLockEnabled,
+                                emailVerified = emailVerified
                             )
                         }
                     )
@@ -321,18 +318,72 @@ private fun AuthenticatedWeApp(
                     )
                 }
             } else {
-                LaunchedEffect(profile.userId) {
-                    viewModel.registerSession(profile.city, profile.countryName)
+                val hasStoredPassword = profile.passwordHash.isNotBlank() && profile.passwordSalt.isNotBlank()
+                var sessionUnlocked by remember(profile.userId) {
+                    val hintPwd = pendingSignInHint?.enteredPassword.orEmpty()
+                    val shouldGate = hasStoredPassword && (
+                        hintPwd.isNotEmpty() ||
+                            (profile.passwordLockEnabled && pendingSignUpDraft == null)
+                    )
+                    val initialOk = if (!shouldGate) {
+                        true
+                    } else if (hintPwd.isNotEmpty()) {
+                        PasswordSecurity.verifyPassword(hintPwd, profile.passwordHash, profile.passwordSalt)
+                    } else {
+                        false
+                    }
+                    mutableStateOf(initialOk)
                 }
-                MainWeAppScaffold(
-                    profile = profile,
-                    viewModel = viewModel,
-                    localPrefs = localPrefs,
-                    prefsStore = prefsStore,
-                    isSubmitting = isSubmitting,
-                    snackbarHostState = snackbarHostState,
-                    onSignOut = onSignOut
-                )
+                val initialGateError = remember(profile.userId) {
+                    val hintPwd = pendingSignInHint?.enteredPassword.orEmpty()
+                    if (
+                        hasStoredPassword &&
+                        hintPwd.isNotEmpty() &&
+                        !PasswordSecurity.verifyPassword(hintPwd, profile.passwordHash, profile.passwordSalt)
+                    ) {
+                        "Incorrect WeApp password entered on Sign In. Please verify below."
+                    } else null
+                }
+
+                LaunchedEffect(profile.userId) {
+                    onClearPendingDrafts()
+                }
+
+                if (!sessionUnlocked) {
+                    PasswordUnlockGate(
+                        displayName = profile.displayName,
+                        email = profile.email,
+                        passwordHash = profile.passwordHash,
+                        passwordSalt = profile.passwordSalt,
+                        strings = strings,
+                        initialError = initialGateError,
+                        isSubmitting = isSubmitting,
+                        onUnlocked = { sessionUnlocked = true },
+                        onResetPasswordWithGoogle = { newPwd, confirmPwd, onDone ->
+                            viewModel.updateAccountPassword(
+                                currentPassword = "",
+                                newPassword = newPwd,
+                                confirmPassword = confirmPwd,
+                                bypassCurrentCheck = true,
+                                onDone = onDone
+                            )
+                        },
+                        onSignOut = onSignOut
+                    )
+                } else {
+                    LaunchedEffect(profile.userId) {
+                        viewModel.registerSession(profile.city, profile.countryName)
+                    }
+                    MainWeAppScaffold(
+                        profile = profile,
+                        viewModel = viewModel,
+                        localPrefs = localPrefs,
+                        prefsStore = prefsStore,
+                        isSubmitting = isSubmitting,
+                        snackbarHostState = snackbarHostState,
+                        onSignOut = onSignOut
+                    )
+                }
             }
         }
     }
@@ -353,6 +404,35 @@ private fun MainWeAppScaffold(
     val strings = remember(localPrefs.language) { stringsFor(localPrefs.language) }
     var currentTab by remember { mutableStateOf(MainTab.HOME) }
     var secondaryRoute by remember { mutableStateOf(SecondaryRoute.NONE) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        scope.launch {
+            prefsStore.setPermissionsPrompted(true)
+            if (results.values.any { granted -> !granted }) {
+                snackbarHostState.showSnackbar(
+                    "Some permissions were denied. You can enable them later in Settings."
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(localPrefs.permissionsPrompted) {
+        if (!localPrefs.permissionsPrompted) {
+            delay(800)
+            val missingPermissions = WeAppPermissions.missingRuntimePermissions(context)
+            if (missingPermissions.isEmpty()) {
+                prefsStore.setPermissionsPrompted(true)
+            } else {
+                runCatching {
+                    permissionLauncher.launch(missingPermissions.toTypedArray())
+                }.onFailure {
+                    prefsStore.setPermissionsPrompted(true)
+                }
+            }
+        }
+    }
 
     val publicUsersState by viewModel.publicUsersState.collectAsStateWithLifecycle()
     val storiesState by viewModel.storiesState.collectAsStateWithLifecycle()
@@ -450,7 +530,7 @@ private fun MainWeAppScaffold(
                     onSaveCloudinaryConfig = { cloud, preset ->
                         scope.launch { prefsStore.setCloudinaryConfig(cloud, preset) }
                     },
-                    onSaveAccount = { displayName, username, email, phone, dob, gender, country, city, bio, website, work, education, relationshipStatus, photoUrl, coverPhotoUrl ->
+                    onSaveAccount = { displayName, username, email, phone, dob, gender, country, state, city, bio, website, work, education, relationshipStatus, photoUrl, coverPhotoUrl, emailVerified ->
                         viewModel.updateAccountDetails(
                             displayName = displayName,
                             username = username,
@@ -459,6 +539,7 @@ private fun MainWeAppScaffold(
                             dateOfBirth = dob,
                             gender = gender,
                             country = country,
+                            state = state,
                             city = city,
                             bio = bio,
                             website = website,
@@ -467,6 +548,7 @@ private fun MainWeAppScaffold(
                             relationshipStatus = relationshipStatus,
                             photoUrl = photoUrl,
                             coverPhotoUrl = coverPhotoUrl,
+                            emailVerified = emailVerified,
                             onDone = { secondaryRoute = SecondaryRoute.NONE }
                         )
                     },
@@ -508,8 +590,21 @@ private fun MainWeAppScaffold(
                     currentUser = profile,
                     sessionsState = sessionsState,
                     strings = strings,
-                    onSaveSecurity = { twoFactor, loginAlerts ->
-                        viewModel.updateSecuritySettings(twoFactor, loginAlerts)
+                    isSubmitting = isSubmitting,
+                    onSaveSecurity = { twoFactor, loginAlerts, passwordLock ->
+                        viewModel.updateSecuritySettings(twoFactor, loginAlerts, passwordLock)
+                    },
+                    onUpdatePassword = { currentPwd, newPwd, confirmPwd, onDone ->
+                        viewModel.updateAccountPassword(
+                            currentPassword = currentPwd,
+                            newPassword = newPwd,
+                            confirmPassword = confirmPwd,
+                            bypassCurrentCheck = false,
+                            onDone = onDone
+                        )
+                    },
+                    onEmailVerified = { verifiedEmail ->
+                        viewModel.markEmailVerified(verifiedEmail)
                     },
                     onRevokeOtherSessions = { viewModel.revokeOtherSessions() },
                     onDownloadData = { onReady -> viewModel.exportUserData(profile, onReady) },

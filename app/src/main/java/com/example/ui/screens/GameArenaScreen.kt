@@ -1,7 +1,6 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,10 +19,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.R
 import com.example.data.*
 import com.example.localization.AppStrings
@@ -63,8 +64,14 @@ fun GameArenaScreen(
                     .height(172.dp)
                     .clip(RoundedCornerShape(24.dp))
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.img_arena_banner),
+                val arenaContext = LocalContext.current
+                AsyncImage(
+                    model = remember(arenaContext) {
+                        ImageRequest.Builder(arenaContext)
+                            .data(R.drawable.img_arena_banner)
+                            .crossfade(true)
+                            .build()
+                    },
                     contentDescription = strings.gameArenaTitle,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop

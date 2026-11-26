@@ -44,6 +44,7 @@ service cloud.firestore {
              (!('countryCode' in data) || (data.countryCode is string && data.countryCode.size() >= 2 && data.countryCode.size() <= 5)) &&
              (!('countryName' in data) || (data.countryName is string && data.countryName.size() >= 1 && data.countryName.size() <= 60)) &&
              (!('countryFlag' in data) || (data.countryFlag is string && data.countryFlag.size() <= 12)) &&
+             (!('state' in data) || (data.state is string && data.state.size() <= 60)) &&
              (!('currencyCode' in data) || (data.currencyCode is string && data.currencyCode.size() >= 3 && data.currencyCode.size() <= 6)) &&
              (!('bio' in data) || (data.bio is string && data.bio.size() <= 200)) &&
              (!('dateOfBirth' in data) || (data.dateOfBirth is string && data.dateOfBirth.size() <= 30)) &&
@@ -64,6 +65,12 @@ service cloud.firestore {
              (!('themeMode' in data) || data.themeMode in ['dark', 'light', 'system']) &&
              (!('fontSize' in data) || data.fontSize in ['small', 'medium', 'large']) &&
              isValidLang(data.language) &&
+             (!('passwordLockEnabled' in data) || data.passwordLockEnabled is bool) &&
+             (!('passwordHash' in data) || (data.passwordHash is string && data.passwordHash.size() <= 200)) &&
+             (!('passwordSalt' in data) || (data.passwordSalt is string && data.passwordSalt.size() <= 100)) &&
+             (!('passwordUpdatedAt' in data) || isValidTimestamp(data.passwordUpdatedAt)) &&
+             (!('emailVerified' in data) || data.emailVerified is bool) &&
+             (!('emailVerifiedAt' in data) || isValidTimestamp(data.emailVerifiedAt)) &&
              (!('accountStatus' in data) || data.accountStatus in ['active', 'deactivated']) &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
@@ -74,9 +81,14 @@ service cloud.firestore {
              data.username is string && data.username.size() >= 3 && data.username.size() <= 30 &&
              data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50 &&
              data.city is string && data.city.size() >= 1 && data.city.size() <= 60 &&
+             !('email' in data) && !('phone' in data) &&
+             !('emailVerified' in data) && !('emailVerifiedAt' in data) &&
+             !('passwordHash' in data) && !('passwordSalt' in data) &&
+             !('passwordLockEnabled' in data) && !('passwordUpdatedAt' in data) &&
              (!('countryCode' in data) || (data.countryCode is string && data.countryCode.size() >= 2 && data.countryCode.size() <= 5)) &&
              (!('countryName' in data) || (data.countryName is string && data.countryName.size() >= 1 && data.countryName.size() <= 60)) &&
              (!('countryFlag' in data) || (data.countryFlag is string && data.countryFlag.size() <= 12)) &&
+             (!('state' in data) || (data.state is string && data.state.size() <= 60)) &&
              (!('bio' in data) || (data.bio is string && data.bio.size() <= 200)) &&
              (!('website' in data) || (data.website is string && data.website.size() <= 150)) &&
              (!('work' in data) || (data.work is string && data.work.size() <= 100)) &&
@@ -318,11 +330,12 @@ service cloud.firestore {
                        incoming().createdAt == existing().createdAt &&
                        incoming().diff(existing()).affectedKeys().hasOnly([
                          'username', 'displayName', 'email', 'phone', 'countryCode', 'countryName', 'countryFlag',
-                         'city', 'currencyCode', 'bio', 'dateOfBirth', 'gender', 'website', 'work', 'education',
+                         'state', 'city', 'currencyCode', 'bio', 'dateOfBirth', 'gender', 'website', 'work', 'education',
                          'relationshipStatus', 'photoUrl', 'coverPhotoUrl', 'plan', 'coins', 'rankPoints',
                          'followersCount', 'followingCount', 'postsCount', 'darkMode', 'themeMode', 'fontSize',
                          'language', 'dataSaver', 'autoPlayVideos', 'showFewerAds', 'twoFactorEnabled',
-                         'loginAlertsEnabled', 'accountStatus', 'privacyPosts', 'privacyFollow', 'privacyMessage',
+                         'loginAlertsEnabled', 'passwordLockEnabled', 'passwordHash', 'passwordSalt',
+                         'passwordUpdatedAt', 'emailVerified', 'emailVerifiedAt', 'accountStatus', 'privacyPosts', 'privacyFollow', 'privacyMessage',
                          'privacyFriends', 'privacyTag', 'privacyContact', 'privacyBirthday', 'searchableByEmail',
                          'searchableByPhone', 'searchableByUsername', 'notifLikes', 'notifComments', 'notifFollows',
                          'notifMessages', 'notifChallenges', 'notifLive', 'notifFriendRequests', 'notifPush',
@@ -435,7 +448,7 @@ service cloud.firestore {
                        incoming().visibility == existing().visibility && (
                          (request.auth.uid == userId &&
                           incoming().diff(existing()).affectedKeys().hasOnly([
-                            'username', 'displayName', 'countryCode', 'countryName', 'countryFlag', 'city',
+                            'username', 'displayName', 'countryCode', 'countryName', 'countryFlag', 'state', 'city',
                             'bio', 'website', 'work', 'education', 'relationshipStatus', 'photoUrl', 'coverPhotoUrl',
                             'plan', 'coins', 'rankPoints', 'followersCount', 'followingCount', 'postsCount',
                             'privacyMessage', 'privacyFollow', 'searchableByUsername', 'accountStatus', 'updatedAt'

@@ -24,34 +24,286 @@ data class CountryInfo(
     val currencySymbol: String,
     val ratePer100Coins: Double,
     val ngnConversionRate: Double,
-    val defaultCity: String
+    val defaultCity: String,
+    val defaultState: String,
+    val states: List<String>
 )
 
 object GlobalCountries {
     val all = listOf(
-        CountryInfo("NG", "Nigeria", "🇳🇬", "+234", "NGN", "₦", 500.0, 1.0, "Lagos"),
-        CountryInfo("GH", "Ghana", "🇬🇭", "+233", "GHS", "GH₵", 7.5, 0.0095, "Accra"),
-        CountryInfo("KE", "Kenya", "🇰🇪", "+254", "KES", "KSh", 65.0, 0.082, "Nairobi"),
-        CountryInfo("US", "United States", "🇺🇸", "+1", "USD", "$", 0.50, 0.00063, "New York"),
-        CountryInfo("GB", "United Kingdom", "🇬🇧", "+44", "GBP", "£", 0.40, 0.00050, "London"),
-        CountryInfo("IN", "India", "🇮🇳", "+91", "INR", "₹", 42.0, 0.053, "Mumbai"),
-        CountryInfo("BR", "Brazil", "🇧🇷", "+55", "BRL", "R$", 2.80, 0.0036, "São Paulo"),
-        CountryInfo("ZA", "South Africa", "🇿🇦", "+27", "ZAR", "R", 9.0, 0.011, "Johannesburg"),
-        CountryInfo("FR", "France", "🇫🇷", "+33", "EUR", "€", 0.46, 0.00058, "Paris"),
-        CountryInfo("DE", "Germany", "🇩🇪", "+49", "EUR", "€", 0.46, 0.00058, "Berlin"),
-        CountryInfo("ES", "Spain", "🇪🇸", "+34", "EUR", "€", 0.46, 0.00058, "Madrid"),
-        CountryInfo("SA", "Saudi Arabia", "🇸🇦", "+966", "SAR", "﷼", 1.88, 0.0024, "Riyadh"),
-        CountryInfo("TZ", "Tanzania", "🇹🇿", "+255", "TZS", "TSh", 1300.0, 1.65, "Dar es Salaam"),
-        CountryInfo("CA", "Canada", "🇨🇦", "+1", "CAD", "C$", 0.68, 0.00086, "Toronto")
+        CountryInfo(
+            code = "NG",
+            name = "Nigeria",
+            flag = "🇳🇬",
+            dialCode = "+234",
+            currencyCode = "NGN",
+            currencySymbol = "₦",
+            ratePer100Coins = 500.0,
+            ngnConversionRate = 1.0,
+            defaultCity = "Lagos",
+            defaultState = "Lagos",
+            states = listOf(
+                "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue",
+                "Borno", "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu",
+                "FCT Abuja", "Gombe", "Imo", "Jigawa", "Kaduna", "Kano", "Katsina",
+                "Kebbi", "Kogi", "Kwara", "Lagos", "Nasarawa", "Niger", "Ogun", "Ondo",
+                "Osun", "Oyo", "Plateau", "Rivers", "Sokoto", "Taraba", "Yobe", "Zamfara"
+            )
+        ),
+        CountryInfo(
+            code = "GH",
+            name = "Ghana",
+            flag = "🇬🇭",
+            dialCode = "+233",
+            currencyCode = "GHS",
+            currencySymbol = "GH₵",
+            ratePer100Coins = 7.5,
+            ngnConversionRate = 0.0095,
+            defaultCity = "Accra",
+            defaultState = "Greater Accra",
+            states = listOf(
+                "Ahafo", "Ashanti", "Bono", "Bono East", "Central", "Eastern",
+                "Greater Accra", "North East", "Northern", "Oti", "Savannah",
+                "Upper East", "Upper West", "Volta", "Western", "Western North"
+            )
+        ),
+        CountryInfo(
+            code = "KE",
+            name = "Kenya",
+            flag = "🇰🇪",
+            dialCode = "+254",
+            currencyCode = "KES",
+            currencySymbol = "KSh",
+            ratePer100Coins = 65.0,
+            ngnConversionRate = 0.082,
+            defaultCity = "Nairobi",
+            defaultState = "Nairobi",
+            states = listOf(
+                "Baringo", "Bomet", "Bungoma", "Busia", "Elgeyo-Marakwet", "Embu", "Garissa",
+                "Homa Bay", "Isiolo", "Kajiado", "Kakamega", "Kericho", "Kiambu", "Kilifi",
+                "Kirinyaga", "Kisii", "Kisumu", "Kitui", "Kwale", "Laikipia", "Lamu",
+                "Machakos", "Makueni", "Mandera", "Marsabit", "Meru", "Migori", "Mombasa",
+                "Murang'a", "Nairobi", "Nakuru", "Nandi", "Narok", "Nyamira", "Nyandarua",
+                "Nyeri", "Samburu", "Siaya", "Taita-Taveta", "Tana River", "Tharaka-Nithi",
+                "Trans Nzoia", "Turkana", "Uasin Gishu", "Vihiga", "Wajir", "West Pokot"
+            )
+        ),
+        CountryInfo(
+            code = "US",
+            name = "United States",
+            flag = "🇺🇸",
+            dialCode = "+1",
+            currencyCode = "USD",
+            currencySymbol = "$",
+            ratePer100Coins = 0.50,
+            ngnConversionRate = 0.00063,
+            defaultCity = "New York",
+            defaultState = "New York",
+            states = listOf(
+                "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado",
+                "Connecticut", "Delaware", "District of Columbia", "Florida", "Georgia",
+                "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky",
+                "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
+                "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire",
+                "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota",
+                "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina",
+                "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Virginia",
+                "Washington", "West Virginia", "Wisconsin", "Wyoming"
+            )
+        ),
+        CountryInfo(
+            code = "GB",
+            name = "United Kingdom",
+            flag = "🇬🇧",
+            dialCode = "+44",
+            currencyCode = "GBP",
+            currencySymbol = "£",
+            ratePer100Coins = 0.40,
+            ngnConversionRate = 0.00050,
+            defaultCity = "London",
+            defaultState = "Greater London",
+            states = listOf(
+                "England", "Scotland", "Wales", "Northern Ireland", "Greater London",
+                "Greater Manchester", "West Midlands", "West Yorkshire", "Merseyside",
+                "Kent", "Essex", "Hampshire", "Surrey", "Lancashire"
+            )
+        ),
+        CountryInfo(
+            code = "IN",
+            name = "India",
+            flag = "🇮🇳",
+            dialCode = "+91",
+            currencyCode = "INR",
+            currencySymbol = "₹",
+            ratePer100Coins = 42.0,
+            ngnConversionRate = 0.053,
+            defaultCity = "Mumbai",
+            defaultState = "Maharashtra",
+            states = listOf(
+                "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chandigarh",
+                "Chhattisgarh", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh",
+                "Jammu and Kashmir", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh",
+                "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha",
+                "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura",
+                "Uttar Pradesh", "Uttarakhand", "West Bengal"
+            )
+        ),
+        CountryInfo(
+            code = "BR",
+            name = "Brazil",
+            flag = "🇧🇷",
+            dialCode = "+55",
+            currencyCode = "BRL",
+            currencySymbol = "R$",
+            ratePer100Coins = 2.80,
+            ngnConversionRate = 0.0036,
+            defaultCity = "São Paulo",
+            defaultState = "São Paulo",
+            states = listOf(
+                "Acre", "Alagoas", "Amapá", "Amazonas", "Bahia", "Ceará",
+                "Distrito Federal", "Espírito Santo", "Goiás", "Maranhão", "Mato Grosso",
+                "Mato Grosso do Sul", "Minas Gerais", "Pará", "Paraíba", "Paraná",
+                "Pernambuco", "Piauí", "Rio de Janeiro", "Rio Grande do Norte",
+                "Rio Grande do Sul", "Rondônia", "Roraima", "Santa Catarina",
+                "São Paulo", "Sergipe", "Tocantins"
+            )
+        ),
+        CountryInfo(
+            code = "ZA",
+            name = "South Africa",
+            flag = "🇿🇦",
+            dialCode = "+27",
+            currencyCode = "ZAR",
+            currencySymbol = "R",
+            ratePer100Coins = 9.0,
+            ngnConversionRate = 0.011,
+            defaultCity = "Johannesburg",
+            defaultState = "Gauteng",
+            states = listOf(
+                "Eastern Cape", "Free State", "Gauteng", "KwaZulu-Natal", "Limpopo",
+                "Mpumalanga", "North West", "Northern Cape", "Western Cape"
+            )
+        ),
+        CountryInfo(
+            code = "FR",
+            name = "France",
+            flag = "🇫🇷",
+            dialCode = "+33",
+            currencyCode = "EUR",
+            currencySymbol = "€",
+            ratePer100Coins = 0.46,
+            ngnConversionRate = 0.00058,
+            defaultCity = "Paris",
+            defaultState = "Île-de-France",
+            states = listOf(
+                "Auvergne-Rhône-Alpes", "Bourgogne-Franche-Comté", "Bretagne",
+                "Centre-Val de Loire", "Corse", "Grand Est", "Hauts-de-France",
+                "Île-de-France", "Normandie", "Nouvelle-Aquitaine", "Occitanie",
+                "Pays de la Loire", "Provence-Alpes-Côte d'Azur"
+            )
+        ),
+        CountryInfo(
+            code = "DE",
+            name = "Germany",
+            flag = "🇩🇪",
+            dialCode = "+49",
+            currencyCode = "EUR",
+            currencySymbol = "€",
+            ratePer100Coins = 0.46,
+            ngnConversionRate = 0.00058,
+            defaultCity = "Berlin",
+            defaultState = "Berlin",
+            states = listOf(
+                "Baden-Württemberg", "Bavaria", "Berlin", "Brandenburg", "Bremen",
+                "Hamburg", "Hesse", "Lower Saxony", "Mecklenburg-Vorpommern",
+                "North Rhine-Westphalia", "Rhineland-Palatinate", "Saarland", "Saxony",
+                "Saxony-Anhalt", "Schleswig-Holstein", "Thuringia"
+            )
+        ),
+        CountryInfo(
+            code = "ES",
+            name = "Spain",
+            flag = "🇪🇸",
+            dialCode = "+34",
+            currencyCode = "EUR",
+            currencySymbol = "€",
+            ratePer100Coins = 0.46,
+            ngnConversionRate = 0.00058,
+            defaultCity = "Madrid",
+            defaultState = "Community of Madrid",
+            states = listOf(
+                "Andalusia", "Aragon", "Asturias", "Balearic Islands", "Basque Country",
+                "Canary Islands", "Cantabria", "Castile and León", "Castilla-La Mancha",
+                "Catalonia", "Community of Madrid", "Extremadura", "Galicia", "La Rioja",
+                "Navarre", "Region of Murcia", "Valencian Community"
+            )
+        ),
+        CountryInfo(
+            code = "SA",
+            name = "Saudi Arabia",
+            flag = "🇸🇦",
+            dialCode = "+966",
+            currencyCode = "SAR",
+            currencySymbol = "﷼",
+            ratePer100Coins = 1.88,
+            ngnConversionRate = 0.0024,
+            defaultCity = "Riyadh",
+            defaultState = "Riyadh",
+            states = listOf(
+                "Al Bahah", "Al Jouf", "Asir", "Eastern Province", "Hail", "Jazan",
+                "Madinah", "Makkah", "Najran", "Northern Borders", "Qassim",
+                "Riyadh", "Tabuk"
+            )
+        ),
+        CountryInfo(
+            code = "TZ",
+            name = "Tanzania",
+            flag = "🇹🇿",
+            dialCode = "+255",
+            currencyCode = "TZS",
+            currencySymbol = "TSh",
+            ratePer100Coins = 1300.0,
+            ngnConversionRate = 1.65,
+            defaultCity = "Dar es Salaam",
+            defaultState = "Dar es Salaam",
+            states = listOf(
+                "Arusha", "Dar es Salaam", "Dodoma", "Geita", "Iringa", "Kagera",
+                "Katavi", "Kigoma", "Kilimanjaro", "Lindi", "Manyara", "Mara", "Mbeya",
+                "Morogoro", "Mtwara", "Mwanza", "Njombe", "Pemba North", "Pemba South",
+                "Pwani", "Rukwa", "Ruvuma", "Shinyanga", "Simiyu", "Singida", "Songwe",
+                "Tabora", "Tanga", "Zanzibar Central/South", "Zanzibar North",
+                "Zanzibar Urban/West"
+            )
+        ),
+        CountryInfo(
+            code = "CA",
+            name = "Canada",
+            flag = "🇨🇦",
+            dialCode = "+1",
+            currencyCode = "CAD",
+            currencySymbol = "C$",
+            ratePer100Coins = 0.68,
+            ngnConversionRate = 0.00086,
+            defaultCity = "Toronto",
+            defaultState = "Ontario",
+            states = listOf(
+                "Alberta", "British Columbia", "Manitoba", "New Brunswick",
+                "Newfoundland and Labrador", "Northwest Territories", "Nova Scotia",
+                "Nunavut", "Ontario", "Prince Edward Island", "Quebec", "Saskatchewan",
+                "Yukon"
+            )
+        )
     )
 
     fun byCode(code: String?): CountryInfo =
         all.firstOrNull { it.code.equals(code, ignoreCase = true) } ?: all.first { it.code == "US" }
 
+    fun statesFor(code: String?): List<String> = byCode(code).states
+
     fun detectDeviceCountry(): CountryInfo {
         val deviceCode = Locale.getDefault().country
         return all.firstOrNull { it.code.equals(deviceCode, ignoreCase = true) }
-            ?: CountryInfo("US", "United States", "🇺🇸", "+1", "USD", "$", 0.50, 0.00063, "New York")
+            ?: all.first { it.code == "US" }
     }
 
     fun isAtLeast13YearsOld(dobInput: String): Boolean {

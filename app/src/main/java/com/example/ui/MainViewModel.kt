@@ -210,17 +210,23 @@ class MainViewModel(
         email: String,
         phone: String,
         country: CountryInfo,
+        state: String = "",
         city: String,
         bio: String,
         dateOfBirth: String,
         gender: String,
         photoUrl: String,
         themeMode: String,
-        language: String
+        language: String,
+        passwordHash: String = "",
+        passwordSalt: String = "",
+        passwordLockEnabled: Boolean = false,
+        emailVerified: Boolean = false
     ) = launchMutation("Welcome to WeApp! +100 Coins awarded") {
         repository.createUserProfile(
-            username, displayName, email, phone, country, city, bio,
-            dateOfBirth, gender, photoUrl, themeMode, language
+            username, displayName, email, phone, country, state, city, bio,
+            dateOfBirth, gender, photoUrl, themeMode, language,
+            passwordHash, passwordSalt, passwordLockEnabled, emailVerified
         )
     }
 
@@ -232,6 +238,7 @@ class MainViewModel(
         dateOfBirth: String,
         gender: String,
         country: CountryInfo,
+        state: String = "",
         city: String,
         bio: String,
         website: String,
@@ -240,6 +247,7 @@ class MainViewModel(
         relationshipStatus: String,
         photoUrl: String,
         coverPhotoUrl: String,
+        emailVerified: Boolean? = null,
         onDone: () -> Unit = {}
     ) {
         viewModelScope.launch {
@@ -252,6 +260,7 @@ class MainViewModel(
                 dateOfBirth = dateOfBirth,
                 gender = gender,
                 country = country,
+                state = state,
                 city = city,
                 bio = bio,
                 website = website,
@@ -259,7 +268,8 @@ class MainViewModel(
                 education = education,
                 relationshipStatus = relationshipStatus,
                 photoUrl = photoUrl,
-                coverPhotoUrl = coverPhotoUrl
+                coverPhotoUrl = coverPhotoUrl,
+                emailVerified = emailVerified
             )
             _isSubmitting.value = false
             res.fold(
@@ -268,6 +278,21 @@ class MainViewModel(
                     onDone()
                 },
                 onFailure = { e -> _statusBanner.value = e.localizedMessage ?: "Failed to save" }
+            )
+        }
+    }
+
+    fun markEmailVerified(email: String, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            _isSubmitting.value = true
+            val res = repository.markEmailVerified(email)
+            _isSubmitting.value = false
+            res.fold(
+                onSuccess = {
+                    _statusBanner.value = "Email verified & saved to your account!"
+                    onDone()
+                },
+                onFailure = { e -> _statusBanner.value = e.localizedMessage ?: "Failed to update verification status" }
             )
         }
     }
@@ -309,10 +334,41 @@ class MainViewModel(
         )
     }
 
-    fun updateSecuritySettings(twoFactorEnabled: Boolean, loginAlertsEnabled: Boolean) =
-        launchMutation("Security preferences updated") {
-            repository.updateSecuritySettings(twoFactorEnabled, loginAlertsEnabled)
+    fun updateSecuritySettings(
+        twoFactorEnabled: Boolean,
+        loginAlertsEnabled: Boolean,
+        passwordLockEnabled: Boolean = false
+    ) = launchMutation("Security preferences updated") {
+        repository.updateSecuritySettings(twoFactorEnabled, loginAlertsEnabled, passwordLockEnabled)
+    }
+
+    fun updateAccountPassword(
+        currentPassword: String,
+        newPassword: String,
+        confirmPassword: String,
+        bypassCurrentCheck: Boolean = false,
+        onDone: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isSubmitting.value = true
+            val res = repository.updateAccountPassword(
+                currentPassword = currentPassword,
+                newPassword = newPassword,
+                confirmPassword = confirmPassword,
+                bypassCurrentCheck = bypassCurrentCheck
+            )
+            _isSubmitting.value = false
+            res.fold(
+                onSuccess = {
+                    _statusBanner.value = "Password updated securely in database"
+                    onDone()
+                },
+                onFailure = { e ->
+                    _statusBanner.value = e.localizedMessage ?: "Failed to update password"
+                }
+            )
         }
+    }
 
     fun syncAppearanceAndAds(
         themeMode: String,
