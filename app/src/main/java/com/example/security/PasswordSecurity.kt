@@ -115,6 +115,67 @@ object PasswordSecurity {
         }
     }
 
+    fun verifyEmailOrUsernameMatch(
+        enteredIdentifier: String,
+        storedEmail: String,
+        storedUsername: String
+    ): Boolean {
+        val clean = enteredIdentifier.trim()
+        if (clean.isEmpty()) return false
+        val cleanUsername = clean.removePrefix("@")
+        return storedEmail.equals(clean, ignoreCase = true) ||
+            storedUsername.equals(cleanUsername, ignoreCase = true)
+    }
+
+    fun verifyPhoneMatch(
+        enteredPhoneDigits: String,
+        dialCode: String,
+        storedPhone: String
+    ): Boolean {
+        val storedDigits = storedPhone.filter { it.isDigit() }
+        val enteredDigits = enteredPhoneDigits.filter { it.isDigit() }
+        val localDigits = enteredDigits.trimStart('0')
+        if (storedDigits.isEmpty() || localDigits.length < 7) return false
+        val fullDigits = (dialCode + localDigits).filter { it.isDigit() }
+        val rawFullDigits = (dialCode + enteredDigits).filter { it.isDigit() }
+        return storedDigits == fullDigits ||
+            storedDigits == rawFullDigits ||
+            storedDigits == enteredDigits ||
+            storedDigits.endsWith(localDigits)
+    }
+
+    fun verifyStoredCredentials(
+        enteredIdentifier: String,
+        enteredPhoneDigits: String,
+        dialCode: String,
+        enteredPassword: String,
+        storedEmail: String,
+        storedUsername: String,
+        storedPhone: String,
+        storedPasswordHash: String,
+        storedPasswordSalt: String
+    ): String? {
+        if (enteredIdentifier.isNotBlank() &&
+            !verifyEmailOrUsernameMatch(enteredIdentifier, storedEmail, storedUsername)
+        ) {
+            return "The email or username you entered does not match this account."
+        }
+        if (enteredPhoneDigits.isNotBlank() &&
+            !verifyPhoneMatch(enteredPhoneDigits, dialCode, storedPhone)
+        ) {
+            return "The phone number you entered does not match this account."
+        }
+        if (enteredPassword.isNotBlank()) {
+            if (storedPasswordHash.isBlank() || storedPasswordSalt.isBlank()) {
+                return "No WeApp password is set on this account yet. Use Sign in with Google, or set a password in Security Settings."
+            }
+            if (!verifyPassword(enteredPassword, storedPasswordHash, storedPasswordSalt)) {
+                return "Incorrect password. Please check your password and try again."
+            }
+        }
+        return null
+    }
+
     private fun deriveKey(
         password: String,
         saltBytes: ByteArray,

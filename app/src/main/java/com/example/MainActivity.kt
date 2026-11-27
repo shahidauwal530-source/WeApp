@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,6 +20,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.auth.GoogleAuthHelper
+import com.example.data.GlobalCountries
 import com.example.data.LocalAppPrefs
 import com.example.data.PrivateUser
 import com.example.data.UserPreferencesDataStore
@@ -41,6 +43,11 @@ import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+private enum class AuthRoute {
+    SIGN_IN,
+    SIGN_UP
+}
 
 private enum class SecondaryRoute {
     NONE,
@@ -91,6 +98,11 @@ fun WeAppRoot() {
     }
     var pendingSignUpDraft by remember { mutableStateOf<PendingSignUpDraft?>(null) }
     var pendingSignInHint by remember { mutableStateOf<PendingSignInHint?>(null) }
+    var signInErrorMessage by remember { mutableStateOf<String?>(null) }
+    var authRoute by remember { mutableStateOf(AuthRoute.SIGN_IN) }
+    var signUpPrefillEmailOrUser by remember { mutableStateOf("") }
+    var signUpPrefillPhone by remember { mutableStateOf("") }
+    var signUpPrefillDialCountry by remember { mutableStateOf(GlobalCountries.detectDeviceCountry()) }
     var autoSignInChecked by remember { mutableStateOf(false) }
 
     DisposableEffect(hasFirebase) {
@@ -146,25 +158,58 @@ fun WeAppRoot() {
                     )
                 }
                 currentUser == null -> {
-                    AuthScreen(
-                        strings = strings,
-                        currentLanguage = localPrefs.language,
-                        initialRememberSession = localPrefs.rememberSession,
-                        initialSignInHint = localPrefs.lastSignedInHint,
-                        onToggleLanguage = { lang -> scope.launch { prefsStore.setLanguage(lang) } },
-                        onRememberSessionChanged = { rememberMe, hint ->
-                            scope.launch { prefsStore.setRememberSession(rememberMe, hint) }
-                        },
-                        onSignInHintPrepared = { hint ->
-                            pendingSignInHint = hint
-                            pendingSignUpDraft = null
-                        },
-                        onSignUpDraftPrepared = { draft ->
-                            pendingSignUpDraft = draft
-                            pendingSignInHint = null
-                        },
-                        onAuthSuccess = { currentUser = runCatching { Firebase.auth.currentUser }.getOrNull() }
-                    )
+                    AnimatedContent(
+                        targetState = authRoute,
+                        label = "auth_screen_route"
+                    ) { route ->
+                        when (route) {
+                            AuthRoute.SIGN_IN -> SignInScreen(
+                                strings = strings,
+                                currentLanguage = localPrefs.language,
+                                initialRememberSession = localPrefs.rememberSession,
+                                initialSignInHint = localPrefs.lastSignedInHint,
+                                initialErrorMessage = signInErrorMessage,
+                                onConsumeInitialError = { signInErrorMessage = null },
+                                onToggleLanguage = { lang -> scope.launch { prefsStore.setLanguage(lang) } },
+                                onRememberSessionChanged = { rememberMe, hint ->
+                                    scope.launch { prefsStore.setRememberSession(rememberMe, hint) }
+                                },
+                                onSignInHintPrepared = { hint ->
+                                    signInErrorMessage = null
+                                    pendingSignInHint = hint
+                                    pendingSignUpDraft = null
+                                },
+                                onNavigateToSignUp = { prefillId, prefillPhone, dialCountry ->
+                                    signInErrorMessage = null
+                                    signUpPrefillEmailOrUser = prefillId
+                                    signUpPrefillPhone = prefillPhone
+                                    signUpPrefillDialCountry = dialCountry
+                                    authRoute = AuthRoute.SIGN_UP
+                                },
+                                onAuthSuccess = {
+                                    currentUser = runCatching { Firebase.auth.currentUser }.getOrNull()
+                                }
+                            )
+                            AuthRoute.SIGN_UP -> SignUpScreen(
+                                strings = strings,
+                                currentLanguage = localPrefs.language,
+                                initialEmailOrUsername = signUpPrefillEmailOrUser,
+                                initialPhoneDigits = signUpPrefillPhone,
+                                initialDialCountry = signUpPrefillDialCountry,
+                                onToggleLanguage = { lang -> scope.launch { prefsStore.setLanguage(lang) } },
+                                onSignUpDraftPrepared = { draft ->
+                                    pendingSignUpDraft = draft
+                                    pendingSignInHint = null
+                                },
+                                onNavigateToSignIn = {
+                                    authRoute = AuthRoute.SIGN_IN
+                                },
+                                onAuthSuccess = {
+                                    currentUser = runCatching { Firebase.auth.currentUser }.getOrNull()
+                                }
+                            )
+                        }
+                    }
                 }
                 else -> {
                     val user = currentUser
@@ -180,9 +225,28 @@ fun WeAppRoot() {
                                     pendingSignUpDraft = null
                                     pendingSignInHint = null
                                 },
+                                onSignOutWithError = { errMsg ->
+                                    pendingSignUpDraft = null
+                                    pendingSignInHint = null
+                                    signInErrorMessage = errMsg
+                                    authRoute = AuthRoute.SIGN_IN
+                                    runCatching {
+                                        val cm = CredentialManager.create(context)
+                                        GoogleAuthHelper.signOut(cm, scope) {
+                                            currentUser = null
+                                        }
+                                    }.onFailure {
+                                        runCatching { Firebase.auth.signOut() }
+                                        currentUser = null
+                                    }
+                                },
                                 onSignOut = {
                                     pendingSignUpDraft = null
                                     pendingSignInHint = null
+                                    signInErrorMessage = null
+                                    authRoute = AuthRoute.SIGN_IN
+                                    signUpPrefillEmailOrUser = ""
+                                    signUpPrefillPhone = ""
                                     runCatching {
                                         val cm = CredentialManager.create(context)
                                         GoogleAuthHelper.signOut(cm, scope) {
@@ -210,6 +274,7 @@ private fun AuthenticatedWeApp(
     pendingSignUpDraft: PendingSignUpDraft? = null,
     pendingSignInHint: PendingSignInHint? = null,
     onClearPendingDrafts: () -> Unit = {},
+    onSignOutWithError: (String) -> Unit = {},
     onSignOut: () -> Unit
 ) {
     val context = LocalContext.current
@@ -272,52 +337,126 @@ private fun AuthenticatedWeApp(
         is UiState.Success -> {
             val profile = userState.data
             if (profile == null) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    ProfileSetupScreen(
-                        firebaseUser = firebaseUser,
-                        cloudinaryCloudName = localPrefs.cloudinaryCloudName,
-                        cloudinaryUploadPreset = localPrefs.cloudinaryUploadPreset,
-                        strings = strings,
-                        currentLanguage = localPrefs.language,
-                        isSubmitting = isSubmitting,
-                        initialSignUpDraft = pendingSignUpDraft,
-                        initialSignInHint = pendingSignInHint,
-                        onCheckUsername = { viewModel.checkUsernameAvailable(it) },
-                        onSaveCloudinaryConfig = { c, p ->
-                            scope.launch { prefsStore.setCloudinaryConfig(c, p) }
-                        },
-                        onShowMessage = { viewModel.showMessage(it) },
-                        onSignOut = onSignOut,
-                        onSubmitProfile = { username, displayName, email, phone, country, state, city, bio, dateOfBirth, gender, photoUrl, passwordHash, passwordSalt, passwordLockEnabled, emailVerified ->
-                            viewModel.completeProfile(
-                                username = username,
-                                displayName = displayName,
-                                email = email,
-                                phone = phone,
-                                country = country,
-                                state = state,
-                                city = city,
-                                bio = bio,
-                                dateOfBirth = dateOfBirth,
-                                gender = gender,
-                                photoUrl = photoUrl,
-                                themeMode = localPrefs.themeMode,
-                                language = localPrefs.language,
-                                passwordHash = passwordHash,
-                                passwordSalt = passwordSalt,
-                                passwordLockEnabled = passwordLockEnabled,
-                                emailVerified = emailVerified
+                var autoCreateTriggered by remember(firebaseUser.uid) { mutableStateOf(false) }
+                var autoCreateError by remember(firebaseUser.uid) { mutableStateOf<String?>(null) }
+                val autoDraft = pendingSignUpDraft?.takeIf { it.autoCompleteProfile }
+                LaunchedEffect(firebaseUser.uid, autoDraft) {
+                    if (autoDraft != null && !autoCreateTriggered) {
+                        autoCreateTriggered = true
+                        val digitsOnly = autoDraft.phoneDigits.filter { it.isDigit() }.trimStart('0')
+                        val fullPhone = "${autoDraft.dialCountry.dialCode}$digitsOnly"
+                        viewModel.completeProfile(
+                            username = autoDraft.username,
+                            displayName = autoDraft.displayName,
+                            email = autoDraft.email,
+                            phone = fullPhone,
+                            country = autoDraft.selectedCountry,
+                            state = autoDraft.state,
+                            city = autoDraft.city,
+                            bio = autoDraft.bio,
+                            dateOfBirth = autoDraft.dateOfBirth,
+                            gender = autoDraft.gender,
+                            photoUrl = autoDraft.photoUrl,
+                            themeMode = localPrefs.themeMode,
+                            language = localPrefs.language,
+                            passwordHash = autoDraft.passwordHash,
+                            passwordSalt = autoDraft.passwordSalt,
+                            passwordLockEnabled = autoDraft.passwordLockEnabled,
+                            emailVerified = autoDraft.emailVerified,
+                            onError = { errMsg -> autoCreateError = errMsg }
+                        )
+                    }
+                }
+                if (autoDraft != null && autoCreateError == null) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            CircularProgressIndicator(color = WePurple)
+                            Text(
+                                text = "Creating your WeApp account...",
+                                style = MaterialTheme.typography.bodyMedium
                             )
                         }
-                    )
-                    SnackbarHost(
-                        hostState = snackbarHostState,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .navigationBarsPadding()
-                    )
+                    }
+                } else {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        ProfileSetupScreen(
+                            firebaseUser = firebaseUser,
+                            cloudinaryCloudName = localPrefs.cloudinaryCloudName,
+                            cloudinaryUploadPreset = localPrefs.cloudinaryUploadPreset,
+                            strings = strings,
+                            currentLanguage = localPrefs.language,
+                            isSubmitting = isSubmitting,
+                            initialSignUpDraft = pendingSignUpDraft,
+                            initialSignInHint = pendingSignInHint,
+                            onCheckUsername = { viewModel.checkUsernameAvailable(it) },
+                            onSaveCloudinaryConfig = { c, p ->
+                                scope.launch { prefsStore.setCloudinaryConfig(c, p) }
+                            },
+                            onShowMessage = { viewModel.showMessage(it) },
+                            onSignOut = onSignOut,
+                            onSubmitProfile = { username, displayName, email, phone, country, state, city, bio, dateOfBirth, gender, photoUrl, passwordHash, passwordSalt, passwordLockEnabled, emailVerified ->
+                                viewModel.completeProfile(
+                                    username = username,
+                                    displayName = displayName,
+                                    email = email,
+                                    phone = phone,
+                                    country = country,
+                                    state = state,
+                                    city = city,
+                                    bio = bio,
+                                    dateOfBirth = dateOfBirth,
+                                    gender = gender,
+                                    photoUrl = photoUrl,
+                                    themeMode = localPrefs.themeMode,
+                                    language = localPrefs.language,
+                                    passwordHash = passwordHash,
+                                    passwordSalt = passwordSalt,
+                                    passwordLockEnabled = passwordLockEnabled,
+                                    emailVerified = emailVerified
+                                )
+                            }
+                        )
+                        SnackbarHost(
+                            hostState = snackbarHostState,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .navigationBarsPadding()
+                        )
+                    }
                 }
             } else {
+                val strictMismatchError = remember(profile.userId, pendingSignInHint) {
+                    val hint = pendingSignInHint
+                    if (hint != null && hint.verifyCredentialsStrictly) {
+                        PasswordSecurity.verifyStoredCredentials(
+                            enteredIdentifier = hint.identifier,
+                            enteredPhoneDigits = hint.phoneDigits,
+                            dialCode = hint.dialCountry.dialCode,
+                            enteredPassword = hint.enteredPassword,
+                            storedEmail = profile.email,
+                            storedUsername = profile.username,
+                            storedPhone = profile.phone,
+                            storedPasswordHash = profile.passwordHash,
+                            storedPasswordSalt = profile.passwordSalt
+                        )
+                    } else {
+                        null
+                    }
+                }
+
+                if (strictMismatchError != null) {
+                    LaunchedEffect(profile.userId, strictMismatchError) {
+                        onSignOutWithError(strictMismatchError)
+                    }
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = WePurple)
+                    }
+                    return
+                }
+
                 val hasStoredPassword = profile.passwordHash.isNotBlank() && profile.passwordSalt.isNotBlank()
                 var sessionUnlocked by remember(profile.userId) {
                     val hintPwd = pendingSignInHint?.enteredPassword.orEmpty()

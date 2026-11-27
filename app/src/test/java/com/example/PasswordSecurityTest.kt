@@ -43,4 +43,85 @@ class PasswordSecurityTest {
         assertEquals("Good", PasswordSecurity.evaluateStrength("weapp123").label)
         assertEquals("Strong", PasswordSecurity.evaluateStrength("WeApp2026!").label)
     }
+
+    @Test
+    fun `verifyStoredCredentials checks email phone and password accurately`() {
+        val secret = "WeAppPass2026!"
+        val hashed = PasswordSecurity.hashPassword(secret)
+
+        // Matching email + password
+        assertNull(
+            PasswordSecurity.verifyStoredCredentials(
+                enteredIdentifier = "amina@gmail.com",
+                enteredPhoneDigits = "",
+                dialCode = "+234",
+                enteredPassword = secret,
+                storedEmail = "Amina@gmail.com",
+                storedUsername = "amina_b",
+                storedPhone = "+2348012345678",
+                storedPasswordHash = hashed.hash,
+                storedPasswordSalt = hashed.salt
+            )
+        )
+
+        // Matching phone with leading zero + password
+        assertNull(
+            PasswordSecurity.verifyStoredCredentials(
+                enteredIdentifier = "",
+                enteredPhoneDigits = "08012345678",
+                dialCode = "+234",
+                enteredPassword = secret,
+                storedEmail = "amina@gmail.com",
+                storedUsername = "amina_b",
+                storedPhone = "+2348012345678",
+                storedPasswordHash = hashed.hash,
+                storedPasswordSalt = hashed.salt
+            )
+        )
+
+        // Mismatched email
+        assertNotNull(
+            PasswordSecurity.verifyStoredCredentials(
+                enteredIdentifier = "wrong@gmail.com",
+                enteredPhoneDigits = "",
+                dialCode = "+234",
+                enteredPassword = secret,
+                storedEmail = "amina@gmail.com",
+                storedUsername = "amina_b",
+                storedPhone = "+2348012345678",
+                storedPasswordHash = hashed.hash,
+                storedPasswordSalt = hashed.salt
+            )
+        )
+
+        // Mismatched phone
+        assertNotNull(
+            PasswordSecurity.verifyStoredCredentials(
+                enteredIdentifier = "",
+                enteredPhoneDigits = "8099999999",
+                dialCode = "+234",
+                enteredPassword = secret,
+                storedEmail = "amina@gmail.com",
+                storedUsername = "amina_b",
+                storedPhone = "+2348012345678",
+                storedPasswordHash = hashed.hash,
+                storedPasswordSalt = hashed.salt
+            )
+        )
+
+        // Mismatched password
+        assertNotNull(
+            PasswordSecurity.verifyStoredCredentials(
+                enteredIdentifier = "amina@gmail.com",
+                enteredPhoneDigits = "",
+                dialCode = "+234",
+                enteredPassword = "WrongPassword123",
+                storedEmail = "amina@gmail.com",
+                storedUsername = "amina_b",
+                storedPhone = "+2348012345678",
+                storedPasswordHash = hashed.hash,
+                storedPasswordSalt = hashed.salt
+            )
+        )
+    }
 }

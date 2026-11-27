@@ -9,14 +9,21 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
+import androidx.credentials.exceptions.GetCredentialUnsupportedException
+import androidx.credentials.exceptions.NoCredentialException
+import com.example.R
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
 import com.google.firebase.Firebase
 import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuthWebException
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.OAuthProvider
 import com.google.firebase.auth.auth
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -32,14 +39,8 @@ object GoogleAuthHelper {
         else -> null
     }
 
-    @Suppress("DiscouragedApi")
     private fun resolveWebClientId(context: Context): String = try {
-        val resId = context.resources.getIdentifier(
-            "default_web_client_id",
-            "string",
-            context.packageName
-        )
-        if (resId != 0) context.getString(resId).trim() else ""
+        context.getString(R.string.default_web_client_id).trim()
     } catch (_: Throwable) {
         ""
     }
@@ -151,14 +152,81 @@ object GoogleAuthHelper {
                     ).await()
                     onAuthSuccess()
                 } else {
-                    onAuthError("Unexpected credential type")
+                    onAuthError("Unexpected credential type returned by Google Sign-In.")
                 }
             } catch (e: GetCredentialCancellationException) {
                 Log.w(TAG, "Google Sign-In flow cancelled or dismissed: ${e.message}", e)
                 onAuthCancelled()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: NoCredentialException) {
+                Log.w(TAG, "No Google credential in CredentialManager; launching Firebase OAuth Google popup fallback.", e)
+                signInWithFirebaseGooglePopup(
+                    activity = activity,
+                    onAuthSuccess = onAuthSuccess,
+                    onAuthError = onAuthError,
+                    onAuthCancelled = onAuthCancelled
+                )
+            } catch (e: GetCredentialUnsupportedException) {
+                Log.w(TAG, "CredentialManager unsupported on device; launching Firebase OAuth Google popup fallback.", e)
+                signInWithFirebaseGooglePopup(
+                    activity = activity,
+                    onAuthSuccess = onAuthSuccess,
+                    onAuthError = onAuthError,
+                    onAuthCancelled = onAuthCancelled
+                )
+            } catch (e: GetCredentialProviderConfigurationException) {
+                Log.w(TAG, "CredentialManager provider unavailable; launching Firebase OAuth Google popup fallback.", e)
+                signInWithFirebaseGooglePopup(
+                    activity = activity,
+                    onAuthSuccess = onAuthSuccess,
+                    onAuthError = onAuthError,
+                    onAuthCancelled = onAuthCancelled
+                )
             } catch (e: Throwable) {
                 Log.e(TAG, "Google Sign-In failed", e)
-                onAuthError(e.localizedMessage ?: "Sign in failed")
+                onAuthError(e.localizedMessage ?: "Google Sign-In failed. Please try again.")
+            }
+        }
+    }
+
+    private suspend fun signInWithFirebaseGooglePopup(
+        activity: Activity,
+        onAuthSuccess: () -> Unit,
+        onAuthError: (String) -> Unit,
+        onAuthCancelled: () -> Unit
+    ) {
+        try {
+            val auth = Firebase.auth
+            val pendingTask = auth.pendingAuthResult
+            if (pendingTask != null) {
+                pendingTask.await()
+                onAuthSuccess()
+                return
+            }
+            val provider = OAuthProvider.newBuilder("google.com")
+                .addCustomParameter("prompt", "select_account")
+                .build()
+            auth.startActivityForSignInWithProvider(activity, provider).await()
+            onAuthSuccess()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: FirebaseAuthWebException) {
+            Log.w(TAG, "Firebase Google OAuth popup cancelled or closed: ${e.errorCode}", e)
+            if (e.errorCode.contains("CANCELED", ignoreCase = true) ||
+                e.errorCode.contains("CANCELLED", ignoreCase = true) ||
+                e.message?.contains("cancel", ignoreCase = true) == true
+            ) {
+                onAuthCancelled()
+            } else {
+                onAuthError(e.localizedMessage ?: "Google Sign-In was cancelled or failed.")
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Firebase Google OAuth popup failed", e)
+            if (e.message?.contains("cancel", ignoreCase = true) == true) {
+                onAuthCancelled()
+            } else {
+                onAuthError(e.localizedMessage ?: "Google Sign-In failed. Please try again.")
             }
         }
     }

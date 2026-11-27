@@ -221,13 +221,28 @@ class MainViewModel(
         passwordHash: String = "",
         passwordSalt: String = "",
         passwordLockEnabled: Boolean = false,
-        emailVerified: Boolean = false
-    ) = launchMutation("Welcome to WeApp! +100 Coins awarded") {
-        repository.createUserProfile(
-            username, displayName, email, phone, country, state, city, bio,
-            dateOfBirth, gender, photoUrl, themeMode, language,
-            passwordHash, passwordSalt, passwordLockEnabled, emailVerified
-        )
+        emailVerified: Boolean = false,
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isSubmitting.value = true
+            val result = repository.createUserProfile(
+                username, displayName, email, phone, country, state, city, bio,
+                dateOfBirth, gender, photoUrl, themeMode, language,
+                passwordHash, passwordSalt, passwordLockEnabled, emailVerified
+            )
+            _isSubmitting.value = false
+            result.fold(
+                onSuccess = {
+                    _statusBanner.value = "Welcome to WeApp! +100 Coins awarded"
+                },
+                onFailure = { error ->
+                    val msg = error.localizedMessage ?: "Failed to create account"
+                    _statusBanner.value = msg
+                    onError(msg)
+                }
+            )
+        }
     }
 
     fun updateAccountDetails(
